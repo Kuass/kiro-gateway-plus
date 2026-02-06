@@ -264,6 +264,7 @@ FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "claude-haiku-4.5"},
     {"modelId": "claude-sonnet-4.5"},
     {"modelId": "claude-opus-4.5"},
+    {"modelId": "claude-opus-4.6"},
 ]
 
 # ==================================================================================================
