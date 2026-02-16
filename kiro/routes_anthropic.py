@@ -541,6 +541,8 @@ async def messages(
                                                 yield error_event
                                                 return
 
+                                            if "credits_used" in usage_payload and "kiro_credits_used" not in usage_payload:
+                                                usage_payload["kiro_credits_used"] = usage_payload["credits_used"]
                                             usage_payload["credits_used"] = float(charged)
                                             payload_data["usage"] = usage_payload
                                             chunk = f"event: message_delta\ndata: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
@@ -602,6 +604,8 @@ async def messages(
                 if isinstance(usage_payload, dict):
                     try:
                         charged = deduct_credits_for_usage(billing_user_id, request_data.model, usage_payload)
+                        if "credits_used" in usage_payload and "kiro_credits_used" not in usage_payload:
+                            usage_payload["kiro_credits_used"] = usage_payload["credits_used"]
                         usage_payload["credits_used"] = float(charged)
                     except UnknownModelPricingError as exc:
                         raise HTTPException(status_code=400, detail=str(exc))

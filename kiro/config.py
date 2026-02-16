@@ -28,7 +28,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -213,6 +213,47 @@ def get_billing_model_prices() -> List[Dict[str, object]]:
     if isinstance(parsed, list):
         return [item for item in parsed if isinstance(item, dict)]
     return []
+
+
+# ==================================================================================================
+# Model Restriction Settings
+# ==================================================================================================
+
+# Optional strict model allowlist.
+# When enabled, requests for models outside this allowlist are rejected with HTTP 400,
+# and /v1/models only returns allowed models.
+MODEL_ALLOWLIST_ENABLED: bool = _parse_bool_env("MODEL_ALLOWLIST_ENABLED", False)
+
+# Accepted model IDs from clients (raw IDs allowed in addition to normalized forms).
+# Typical values for this deployment:
+# - claude-sonnet-4.5 / claude-sonnet-4-5-20250929
+# - claude-haiku-4.5 / claude-haiku-4-5-20251001
+MODEL_ALLOWED_IDS_JSON: str = os.getenv(
+    "MODEL_ALLOWED_IDS_JSON",
+    '["claude-sonnet-4.5","claude-haiku-4.5","claude-sonnet-4-5-20250929","claude-haiku-4-5-20251001"]',
+)
+
+
+def get_model_allowed_ids() -> Set[str]:
+    """
+    Parse allowed model IDs from environment.
+
+    Returns:
+        Lowercased set of allowed model IDs. Returns empty set on invalid config.
+    """
+    try:
+        parsed = json.loads(MODEL_ALLOWED_IDS_JSON)
+    except json.JSONDecodeError:
+        return set()
+
+    if not isinstance(parsed, list):
+        return set()
+
+    result: Set[str] = set()
+    for item in parsed:
+        if isinstance(item, str) and item.strip():
+            result.add(item.strip().lower())
+    return result
 
 # ==================================================================================================
 # VPN/Proxy Settings for Kiro API Access

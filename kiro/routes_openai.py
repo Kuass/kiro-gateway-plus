@@ -494,6 +494,8 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                                             yield "data: [DONE]\n\n"
                                             return
 
+                                        if "credits_used" in usage_data and "kiro_credits_used" not in usage_data:
+                                            usage_data["kiro_credits_used"] = usage_data["credits_used"]
                                         usage_data["credits_used"] = float(charged)
                                         payload_data["usage"] = usage_data
                                         chunk = f"data: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
@@ -554,6 +556,8 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 if isinstance(usage_payload, dict):
                     try:
                         charged = deduct_credits_for_usage(billing_user_id, request_data.model, usage_payload)
+                        if "credits_used" in usage_payload and "kiro_credits_used" not in usage_payload:
+                            usage_payload["kiro_credits_used"] = usage_payload["credits_used"]
                         usage_payload["credits_used"] = float(charged)
                     except UnknownModelPricingError as exc:
                         raise HTTPException(status_code=400, detail=str(exc))
