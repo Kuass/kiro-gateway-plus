@@ -25,17 +25,19 @@ from kiro.config import (
 
 try:
     from pymongo import MongoClient
-    from pymongo.collection import Collection
-    from pymongo.errors import PyMongoError
+    from pymongo.errors import PyMongoError as MongoPyError
 except ImportError:  # pragma: no cover - exercised only when dependency missing
     MongoClient = None  # type: ignore[assignment]
-    Collection = Any  # type: ignore[misc,assignment]
 
-    class PyMongoError(Exception):
-        """Fallback PyMongo error when pymongo is unavailable."""
+    class MongoPyError(RuntimeError):
+        """Fallback Mongo error type when pymongo is unavailable."""
 
 
 _mongo_client: Optional[Any] = None
+
+
+class MongoStoreUnavailableError(RuntimeError):
+    """Raised when MongoDB operations fail due to connectivity or server issues."""
 
 
 def _require_mongodb_dependency() -> None:
@@ -68,12 +70,15 @@ def _get_client() -> Any:
         raise RuntimeError("MONGODB_URI is required when API_KEY_SOURCE=mongodb or billing is enabled.")
 
     if _mongo_client is None:
-        _mongo_client = MongoClient(MONGODB_URI)
+        client_factory = MongoClient
+        if client_factory is None:
+            raise RuntimeError("MongoDB mode requires 'pymongo'. Install dependencies from requirements.txt.")
+        _mongo_client = client_factory(MONGODB_URI)
 
     return _mongo_client
 
 
-def _get_collection(collection_name: str) -> Collection:
+def _get_collection(collection_name: str) -> Any:
     """
     Get MongoDB collection by name.
 
@@ -124,9 +129,9 @@ def find_active_user_by_api_key(api_key: str) -> Optional[Dict[str, Any]]:
             MONGODB_USER_ACTIVE_FIELD: True,
         }
         return users.find_one(query)
-    except PyMongoError as exc:
+    except MongoPyError as exc:
         logger.error(f"MongoDB user lookup failed: {exc}")
-        return None
+        raise MongoStoreUnavailableError("MongoDB user lookup failed") from exc
 
 
 def get_user_id_from_doc(user_doc: Dict[str, Any]) -> Any:
@@ -165,7 +170,7 @@ def get_credit_balance(user_id: Any) -> Optional[Decimal]:
         if not doc or MONGODB_CREDITS_BALANCE_FIELD not in doc:
             return None
         return _to_decimal(doc[MONGODB_CREDITS_BALANCE_FIELD])
-    except (PyMongoError, ValueError) as exc:
+    except (MongoPyError, ValueError) as exc:
         logger.error(f"MongoDB credit balance lookup failed: {exc}")
         return None
 
@@ -214,6 +219,6 @@ def deduct_credits_atomic(user_id: Any, amount: Decimal) -> bool:
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
+    except MongoPyError as exc:
         logger.error(f"MongoDB atomic credit deduction failed: {exc}")
         return False
