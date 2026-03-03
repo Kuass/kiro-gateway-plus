@@ -394,18 +394,18 @@ async def lifespan(app: FastAPI):
         logger.debug(f"Fetching models from: {list_models_url}")
         
         response = await app.state.http_client.get(
-                list_models_url,
-                headers=headers,
-                params=params
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                models_list = data.get("models", [])
-                await app.state.model_cache.update(models_list)
-                logger.debug(f"Successfully loaded {len(models_list)} models from Kiro API")
-            else:
-                raise Exception(f"HTTP {response.status_code}")
+            list_models_url,
+            headers=headers,
+            params=params
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            models_list = data.get("models", [])
+            await app.state.model_cache.update(models_list)
+            logger.debug(f"Successfully loaded {len(models_list)} models from Kiro API")
+        else:
+            raise Exception(f"HTTP {response.status_code}")
     except Exception as e:
         # FALLBACK: Use built-in model list
         logger.error(f"Failed to fetch models from Kiro API: {e}")
