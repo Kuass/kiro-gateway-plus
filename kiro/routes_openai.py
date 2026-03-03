@@ -52,7 +52,7 @@ from kiro.model_resolver import ModelResolver
 from kiro.converters_openai import build_kiro_payload
 from kiro.streaming_openai import stream_kiro_to_openai, collect_stream_response
 from kiro.http_client import KiroHttpClient
-from kiro.tokenizer import count_message_tokens, count_tools_tokens
+from kiro.tokenizer import count_message_tokens, count_tools_tokens, count_tokens
 from kiro.utils import generate_conversation_id
 from kiro.mongodb_store import (
     find_active_user_by_api_key,
@@ -375,6 +375,13 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
         except InsufficientCreditsError as exc:
             raise HTTPException(status_code=402, detail=str(exc))
 
+    # Count prompt tokens from the full Kiro payload (system prompt + messages + tools)
+    # This matches what actually gets sent to the API, giving accurate token counts
+    kiro_payload_prompt_tokens = count_tokens(
+        kiro_request_body.decode("utf-8", errors="ignore"),
+        apply_claude_correction=False
+    )
+
     # Create HTTP client with retry logic
     # For streaming: use per-request client to avoid CLOSE_WAIT leak on VPN disconnect (issue #54)
     # For non-streaming: use shared client for connection pooling
@@ -459,8 +466,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                         request_data.model,
                         model_cache,
                         auth_manager,
-                        request_messages=messages_for_tokenizer,
-                        request_tools=tools_for_tokenizer
+                        prompt_tokens=kiro_payload_prompt_tokens
                     ):
                         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
                             payload = chunk[len("data: "):].strip()
@@ -553,8 +559,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 request_data.model,
                 model_cache,
                 auth_manager,
-                request_messages=messages_for_tokenizer,
-                request_tools=tools_for_tokenizer
+                prompt_tokens=kiro_payload_prompt_tokens
             )
 
             if BILLING_ENABLED and billing_user_id is not None:

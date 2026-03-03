@@ -47,6 +47,7 @@ from kiro.streaming_anthropic import (
 )
 from kiro.http_client import KiroHttpClient
 from kiro.utils import generate_conversation_id
+from kiro.tokenizer import count_tokens
 from kiro.tokenizer import count_tools_tokens, count_message_tokens
 from kiro.mongodb_store import (
     find_active_user_by_api_key,
@@ -421,6 +422,13 @@ async def messages(
     prompt_tokens = count_message_tokens(messages_for_tokenizer, apply_claude_correction=False)
     tool_tokens_for_billing = count_tools_tokens(tools_for_tokenizer) if tools_for_tokenizer else 0
 
+    # Count prompt tokens from the full Kiro payload (system prompt + messages + tools)
+    # This matches what actually gets sent to the API, giving accurate token counts
+    kiro_payload_prompt_tokens = count_tokens(
+        kiro_request_body.decode('utf-8', errors='ignore'),
+        apply_claude_correction=False
+    )
+
     if BILLING_ENABLED and billing_user_id is not None:
         try:
             required_credits = calculate_preflight_charge(
@@ -500,7 +508,7 @@ async def messages(
                         request_data.model,
                         model_cache,
                         auth_manager,
-                        request_messages=messages_for_tokenizer
+                        prompt_tokens=kiro_payload_prompt_tokens
                     ):
                         if chunk.startswith("event: message_delta"):
                             lines = chunk.strip().splitlines()
@@ -598,7 +606,7 @@ async def messages(
                 request_data.model,
                 model_cache,
                 auth_manager,
-                request_messages=messages_for_tokenizer
+                prompt_tokens=kiro_payload_prompt_tokens
             )
 
             if BILLING_ENABLED and billing_user_id is not None:
