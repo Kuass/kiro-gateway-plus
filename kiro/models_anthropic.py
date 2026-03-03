@@ -28,7 +28,7 @@ Reference: https://docs.anthropic.com/en/api/messages
 
 import time
 from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ==================================================================================================
@@ -92,6 +92,32 @@ class ToolResultContentBlock(BaseModel):
         Union[str, List[Union["TextContentBlock", "ImageContentBlock"]]]
     ] = None
     is_error: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize_unknown_inner_blocks(cls, data: Any) -> Any:
+        """
+        Convert unknown content block types inside tool_result content
+        (e.g. tool_reference from ToolSearch) to text blocks.
+        """
+        if not isinstance(data, dict):
+            return data
+        content = data.get("content")
+        if not isinstance(content, list):
+            return data
+        sanitized = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") not in {"text", "image"}:
+                block_type = block.get("type", "unknown")
+                text = block.get("text") or block.get("tool_name") or block.get("name") or ""
+                sanitized.append({
+                    "type": "text",
+                    "text": f"[{block_type}: {text}]" if text else f"[{block_type}]",
+                })
+            else:
+                sanitized.append(block)
+        data["content"] = sanitized
+        return data
 
 
 # ==================================================================================================
@@ -174,6 +200,34 @@ class AnthropicMessage(BaseModel):
     content: Union[str, List[ContentBlock]]
 
     model_config = {"extra": "allow"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize_unknown_content_blocks(cls, data: Any) -> Any:
+        """
+        Convert unknown content block types (e.g. tool_reference) to text blocks
+        before Pydantic validation, so the request doesn't get rejected with 422.
+        """
+        if not isinstance(data, dict):
+            return data
+        content = data.get("content")
+        if not isinstance(content, list):
+            return data
+        sanitized = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") not in {"text", "thinking", "image", "tool_use", "tool_result"}:
+                # Convert unknown block to a text block preserving useful info
+                block_type = block.get("type", "unknown")
+                # Try common text fields
+                text = block.get("text") or block.get("tool_name") or block.get("name") or ""
+                sanitized.append({
+                    "type": "text",
+                    "text": f"[{block_type}: {text}]" if text else f"[{block_type}]",
+                })
+            else:
+                sanitized.append(block)
+        data["content"] = sanitized
+        return data
 
 
 # ==================================================================================================
