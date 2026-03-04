@@ -1613,3 +1613,106 @@ class TestConvertOpenAIMessagesWithToolImages:
         # Second message is regular user message
         assert unified[1].role == "user"
         assert unified[1].content == "What do you see?"
+
+# ==================================================================================================
+# Tests for response_format JSON instruction injection
+# ==================================================================================================
+
+class TestResponseFormatJsonInjection:
+    """Tests for response_format → system prompt JSON instruction injection."""
+
+    MOCK_CONV_ID = "test-conv-id"
+    MOCK_PROFILE_ARN = "arn:aws:iam::123456789012:user/test"
+
+    def _make_request(self, response_format=None, system_prompt=None):
+        messages = []
+        if system_prompt:
+            messages.append(ChatMessage(role="system", content=system_prompt))
+        messages.append(ChatMessage(role="user", content="Hello"))
+        return ChatCompletionRequest(
+            model="claude-sonnet-4-5",
+            messages=messages,
+            response_format=response_format,
+        )
+
+    def _get_injected_content(self, request):
+        """Build payload and return the content that contains the system prompt."""
+        with patch("kiro.converters_openai.get_model_id_for_kiro", return_value="anthropic.claude-sonnet-4-5"):
+            payload = build_kiro_payload(request, self.MOCK_CONV_ID, self.MOCK_PROFILE_ARN)
+        # System prompt is prepended to the first (and only) userInputMessage content
+        return payload["conversationState"]["currentMessage"]["userInputMessage"]["content"]
+
+    def test_json_object_injects_instruction(self):
+        """
+        What it does: Verifies JSON instruction is injected when response_format is json_object.
+        Purpose: Ensure model returns raw JSON without markdown code blocks.
+        """
+        print("Setup: Request with response_format json_object...")
+        request = self._make_request(response_format={"type": "json_object"})
+
+        print("Action: Building Kiro payload...")
+        content = self._get_injected_content(request)
+
+        print(f"Result content: {content[:200]}")
+        assert "You must respond with valid JSON only" in content
+        assert "markdown code blocks" in content
+
+    def test_json_schema_injects_instruction(self):
+        """
+        What it does: Verifies JSON instruction is injected when response_format is json_schema.
+        Purpose: Ensure structured output requests also get JSON-only instruction.
+        """
+        print("Setup: Request with response_format json_schema...")
+        request = self._make_request(response_format={"type": "json_schema", "schema": {}})
+
+        print("Action: Building Kiro payload...")
+        content = self._get_injected_content(request)
+
+        print(f"Result content: {content[:200]}")
+        assert "You must respond with valid JSON only" in content
+
+    def test_no_response_format_no_injection(self):
+        """
+        What it does: Verifies no JSON instruction is injected without response_format.
+        Purpose: Ensure normal requests are unaffected.
+        """
+        print("Setup: Request without response_format...")
+        request = self._make_request(response_format=None)
+
+        print("Action: Building Kiro payload...")
+        content = self._get_injected_content(request)
+
+        print(f"Result content: {content[:200]}")
+        assert "You must respond with valid JSON only" not in content
+
+    def test_text_format_no_injection(self):
+        """
+        What it does: Verifies no JSON instruction is injected for response_format text.
+        Purpose: Ensure text format requests are unaffected.
+        """
+        print("Setup: Request with response_format text...")
+        request = self._make_request(response_format={"type": "text"})
+
+        print("Action: Building Kiro payload...")
+        content = self._get_injected_content(request)
+
+        print(f"Result content: {content[:200]}")
+        assert "You must respond with valid JSON only" not in content
+
+    def test_existing_system_prompt_is_preserved(self):
+        """
+        What it does: Verifies existing system prompt is kept when JSON instruction is injected.
+        Purpose: Ensure injection appends rather than replaces.
+        """
+        print("Setup: Request with system prompt and response_format json_object...")
+        request = self._make_request(
+            response_format={"type": "json_object"},
+            system_prompt="You are a helpful assistant.",
+        )
+
+        print("Action: Building Kiro payload...")
+        content = self._get_injected_content(request)
+
+        print(f"Result content: {content[:300]}")
+        assert "You are a helpful assistant." in content
+        assert "You must respond with valid JSON only" in content

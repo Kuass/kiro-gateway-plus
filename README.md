@@ -1,3 +1,9 @@
+> **Original repository**: [https://github.com/jwadow/kiro-gateway](https://github.com/jwadow/kiro-gateway)
+>
+> This repository is a personal-use fork. It incorporates most of the open PRs from the original project and adds `response_format` support.
+
+---
+
 <div align="center">
 
 # 👻 Kiro Gateway
