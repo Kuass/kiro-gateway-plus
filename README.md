@@ -1,6 +1,10 @@
 > **Original repository**: [https://github.com/jwadow/kiro-gateway](https://github.com/jwadow/kiro-gateway)
 >
 > This repository is a personal-use fork. It incorporates most of the open PRs from the original project and adds `response_format` support.
+>
+> **Personal notes:**
+> - IDE credentials expire quickly and are difficult to renew — it is recommended to pass the CLI's SQLite database instead.
+> - On macOS, the SQLite file is typically located at `~/Library/Application Support/kiro-cli`.
 
 ---
 
