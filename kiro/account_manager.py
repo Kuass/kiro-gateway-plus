@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
+from fastapi import HTTPException
 from loguru import logger
 
 from kiro.auth import KiroAuthManager, AuthType
@@ -53,6 +54,7 @@ from kiro.config import (
     MODEL_ALIASES,
     HIDDEN_FROM_LIST,
     normalize_config_path,
+    should_fetch_model_list,
     ACCOUNT_RECOVERY_TIMEOUT,
     ACCOUNT_MAX_BACKOFF_MULTIPLIER,
     ACCOUNT_PROBABILISTIC_RETRY_CHANCE,
@@ -60,7 +62,6 @@ from kiro.config import (
     STATE_SAVE_INTERVAL_SECONDS,
     FALLBACK_MODELS,
 )
-from kiro.utils import get_kiro_headers
 from kiro.account_errors import ErrorType
 from kiro.http_client import KiroHttpClient
 
@@ -469,40 +470,46 @@ class AccountManager:
             # Get token to verify credentials
             token = await auth_manager.get_access_token()
             
-            # Fetch models list with retry + fallback
-            params = {"origin": "AI_EDITOR"}
-            if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
-                params["profileArn"] = auth_manager.profile_arn
-            
-            list_models_url = f"{auth_manager.q_host}/ListAvailableModels"
-            
-            # Use KiroHttpClient for retry logic (3 attempts with exponential backoff)
-            http_client = KiroHttpClient(auth_manager, shared_client=None)
-            
-            try:
-                response = await http_client.request_with_retry(
-                    method="GET",
-                    url=list_models_url,
-                    json_data=None,
-                    params=params,
-                    stream=False
+            # Fetch models list with retry + fallback when the configured host supports it.
+            models_list = FALLBACK_MODELS
+            if should_fetch_model_list(auth_manager.q_host):
+                params = {"origin": "AI_EDITOR"}
+                if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
+                    params["profileArn"] = auth_manager.profile_arn
+
+                list_models_url = f"{auth_manager.q_host}/ListAvailableModels"
+
+                # Use KiroHttpClient for retry logic (3 attempts with exponential backoff)
+                http_client = KiroHttpClient(auth_manager, shared_client=None)
+
+                try:
+                    response = await http_client.request_with_retry(
+                        method="GET",
+                        url=list_models_url,
+                        json_data=None,
+                        params=params,
+                        stream=False
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        models_list = data.get("models", [])
+                    else:
+                        # Shouldn't happen (retry handles non-200), but keep for safety
+                        raise RuntimeError(f"HTTP {response.status_code}")
+
+                except (RuntimeError, HTTPException) as e:
+                    # All retries exhausted - use fallback
+                    logger.warning(f"Failed to fetch models for {account_id} after retries: {e}")
+                    logger.warning("Using pre-configured fallback models. Models will be refreshed on next TTL cycle when network recovers.")
+
+                finally:
+                    await http_client.close()
+            else:
+                logger.info(
+                    f"Skipping /ListAvailableModels for {auth_manager.q_host}; "
+                    "using pre-configured fallback models."
                 )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    models_list = data.get("models", [])
-                else:
-                    # Shouldn't happen (retry handles non-200), but keep for safety
-                    raise Exception(f"HTTP {response.status_code}")
-            
-            except Exception as e:
-                # All retries exhausted - use fallback
-                logger.error(f"Failed to fetch models for {account_id} after retries: {e}")
-                logger.warning("Using pre-configured fallback models. Models will be refreshed on next TTL cycle when network recovers.")
-                models_list = FALLBACK_MODELS
-            
-            finally:
-                await http_client.close()
             
             # Create model cache and update
             model_cache = ModelInfoCache()
@@ -557,6 +564,15 @@ class AccountManager:
         http_client = KiroHttpClient(account.auth_manager, shared_client=None)
         
         try:
+            if not should_fetch_model_list(account.auth_manager.q_host):
+                account.models_cached_at = time.time()
+                logger.debug(
+                    f"Skipping model refresh for {account_id}: "
+                    f"{account.auth_manager.q_host} does not expose /ListAvailableModels"
+                )
+                self._dirty = True
+                return
+
             params = {"origin": "AI_EDITOR"}
             if account.auth_manager.auth_type == AuthType.KIRO_DESKTOP and account.auth_manager.profile_arn:
                 params["profileArn"] = account.auth_manager.profile_arn

@@ -558,6 +558,54 @@ class TestNormalizeConfigPath:
         assert result == str(Path("~/kiro creds/token.json").expanduser())
 
 
+class TestShouldFetchModelList:
+    """Tests for upstream model-list fetch gating."""
+
+    def test_auto_mode_skips_runtime_kiro_host(self, monkeypatch):
+        """
+        What it does: Skips /ListAvailableModels for runtime.kiro.dev in auto mode.
+        Purpose: Avoid expected startup 404 logs after the runtime endpoint migration.
+        """
+        import importlib
+        import kiro.config as config_module
+
+        monkeypatch.delenv("MODEL_LIST_FETCH_MODE", raising=False)
+        importlib.reload(config_module)
+
+        assert config_module.MODEL_LIST_FETCH_MODE == "auto"
+        assert config_module.should_fetch_model_list("https://runtime.us-east-1.kiro.dev") is False
+
+    def test_auto_mode_allows_legacy_q_host(self, monkeypatch):
+        """
+        What it does: Allows model-list fetching for legacy hosts in auto mode.
+        Purpose: Preserve behavior for hosts that still expose /ListAvailableModels.
+        """
+        import importlib
+        import kiro.config as config_module
+
+        monkeypatch.delenv("MODEL_LIST_FETCH_MODE", raising=False)
+        importlib.reload(config_module)
+
+        assert config_module.should_fetch_model_list("https://q.us-east-1.amazonaws.com") is True
+
+    def test_explicit_on_mode_fetches_runtime_host(self, monkeypatch):
+        """
+        What it does: Lets operators force upstream model-list fetch attempts.
+        Purpose: Keep a manual override for future runtime endpoint behavior changes.
+        """
+        import importlib
+        import kiro.config as config_module
+
+        monkeypatch.setenv("MODEL_LIST_FETCH_MODE", "on")
+        importlib.reload(config_module)
+
+        assert config_module.MODEL_LIST_FETCH_MODE == "on"
+        assert config_module.should_fetch_model_list("https://runtime.us-east-1.kiro.dev") is True
+
+        monkeypatch.delenv("MODEL_LIST_FETCH_MODE", raising=False)
+        importlib.reload(config_module)
+
+
 class TestFallbackModelsConfig:
     """Tests for FALLBACK_MODELS configuration."""
     

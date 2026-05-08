@@ -371,6 +371,43 @@ KIRO_API_HOST_TEMPLATE: str = "https://runtime.{region}.kiro.dev"
 # Host for Q API (ListAvailableModels)
 KIRO_Q_HOST_TEMPLATE: str = "https://runtime.{region}.kiro.dev"
 
+# Controls whether the gateway attempts the upstream /ListAvailableModels call.
+# auto: skip known runtime.kiro.dev hosts because they currently return 404
+# on: always attempt upstream model listing
+# off: always use FALLBACK_MODELS
+_MODEL_LIST_FETCH_MODE_RAW: str = os.getenv("MODEL_LIST_FETCH_MODE", "auto").strip().lower()
+MODEL_LIST_FETCH_MODE: str = (
+    _MODEL_LIST_FETCH_MODE_RAW
+    if _MODEL_LIST_FETCH_MODE_RAW in ("auto", "on", "off")
+    else "auto"
+)
+
+
+def should_fetch_model_list(q_host: str) -> bool:
+    """
+    Decide whether to call the upstream /ListAvailableModels endpoint.
+
+    The new runtime.<region>.kiro.dev inference endpoint returns 404 for
+    /ListAvailableModels, so auto mode skips that call and uses the built-in
+    fallback list without logging a startup error.
+
+    Args:
+        q_host: Base host configured for Kiro model-list requests.
+
+    Returns:
+        True when the gateway should attempt upstream model listing.
+    """
+    if MODEL_LIST_FETCH_MODE == "on":
+        return True
+    if MODEL_LIST_FETCH_MODE == "off":
+        return False
+
+    normalized_host = q_host.lower()
+    return not (
+        "://runtime." in normalized_host
+        and ".kiro.dev" in normalized_host
+    )
+
 # ==================================================================================================
 # Token Settings
 # ==================================================================================================

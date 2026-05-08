@@ -723,7 +723,7 @@ class TestAccountManagerInitializeAccount:
     """
     
     @pytest.mark.asyncio
-    async def test_initialize_account_json_success(self, tmp_path, mock_list_models_response):
+    async def test_initialize_account_json_success(self, tmp_path, mock_list_models_response, monkeypatch):
         """
         Test successful account initialization with type=json.
         
@@ -754,6 +754,7 @@ class TestAccountManagerInitializeAccount:
         
         await manager.load_credentials()
         account_id = str(test_json.resolve())
+        monkeypatch.setattr('kiro.account_manager.should_fetch_model_list', lambda _: True)
         
         # Mock HTTP client for ListAvailableModels
         with patch('kiro.account_manager.KiroHttpClient') as mock_http_class:
@@ -776,7 +777,7 @@ class TestAccountManagerInitializeAccount:
         assert manager._accounts[account_id].model_resolver is not None
     
     @pytest.mark.asyncio
-    async def test_initialize_account_fetch_models_fallback(self, tmp_path):
+    async def test_initialize_account_fetch_models_fallback(self, tmp_path, monkeypatch):
         """
         Test fallback to FALLBACK_MODELS when API fails.
         
@@ -805,11 +806,12 @@ class TestAccountManagerInitializeAccount:
         
         await manager.load_credentials()
         account_id = str(test_json.resolve())
+        monkeypatch.setattr('kiro.account_manager.should_fetch_model_list', lambda _: True)
         
         # Mock HTTP client to fail
         with patch('kiro.account_manager.KiroHttpClient') as mock_http_class:
             mock_client = AsyncMock()
-            mock_client.request_with_retry = AsyncMock(side_effect=Exception("Network error"))
+            mock_client.request_with_retry = AsyncMock(side_effect=RuntimeError("Network error"))
             mock_client.close = AsyncMock()
             mock_http_class.return_value = mock_client
             
@@ -820,6 +822,50 @@ class TestAccountManagerInitializeAccount:
         print(f"Initialization success: {success}")
         assert success is True  # Should succeed with fallback
         assert manager._accounts[account_id].model_cache is not None
+
+    @pytest.mark.asyncio
+    async def test_initialize_account_skips_model_fetch_for_runtime_endpoint(self, tmp_path):
+        """
+        Test that runtime.kiro.dev initialization uses fallback models directly.
+
+        What it does: Initializes an account without calling /ListAvailableModels.
+        Purpose: Avoid expected HTTP 404 startup noise on the runtime endpoint.
+        """
+        print("\n=== Test: runtime endpoint skips ListAvailableModels ===")
+
+        # Arrange
+        test_json = tmp_path / "test.json"
+        test_json.write_text(json.dumps({
+            "refreshToken": "test_token",
+            "accessToken": "test_access",
+            "expiresAt": "2099-01-01T00:00:00.000Z",
+            "profileArn": "arn:aws:codewhisperer:us-east-1:123456789:profile/test",
+            "region": "us-east-1"
+        }))
+
+        creds_file = tmp_path / "credentials.json"
+        creds_file.write_text(json.dumps([
+            {"type": "json", "path": str(test_json), "enabled": True}
+        ]))
+
+        manager = AccountManager(
+            credentials_file=str(creds_file),
+            state_file=str(tmp_path / "state.json")
+        )
+
+        await manager.load_credentials()
+        account_id = str(test_json.resolve())
+
+        with patch('kiro.account_manager.KiroHttpClient') as mock_http_class:
+            # Act
+            success = await manager._initialize_account(account_id)
+
+        # Assert
+        assert success is True
+        mock_http_class.assert_not_called()
+        assert manager._accounts[account_id].model_cache is not None
+        assert manager._accounts[account_id].model_cache.size >= 1
+        print("✓ Runtime endpoint used fallback models without HTTP fetch")
 
 
 class TestAccountManagerGetNextAccount:
