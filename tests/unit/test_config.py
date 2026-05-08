@@ -7,6 +7,7 @@ Verifies loading settings from environment variables.
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -512,6 +513,49 @@ class TestKiroCliDbFileConfig:
             path = Path(config_module.KIRO_CLI_DB_FILE)
             # Path should be constructable (doesn't raise exception)
             assert str(path) == config_module.KIRO_CLI_DB_FILE
+
+
+class TestNormalizeConfigPath:
+    """Tests for cross-platform configuration path normalization."""
+
+    def test_expands_windows_percent_environment_variables(self, monkeypatch):
+        """
+        What it does: Expands Windows-style %VAR% path segments.
+        Purpose: Ensure Windows kiro-cli paths can be configured in .env files.
+        """
+        print("Setup: Mocking LOCALAPPDATA...")
+        monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\tester\AppData\Local")
+
+        from kiro.config import normalize_config_path
+
+        result = normalize_config_path(r"%LOCALAPPDATA%\Kiro-Cli\data.sqlite3")
+
+        print(f"Normalized Windows path: {result}")
+        assert result == str(Path(r"C:\Users\tester\AppData\Local\Kiro-Cli\data.sqlite3"))
+
+    def test_expands_unix_home_path(self):
+        """
+        What it does: Expands Unix home-directory paths.
+        Purpose: Preserve existing Linux/macOS credential path behavior.
+        """
+        from kiro.config import normalize_config_path
+
+        result = normalize_config_path("~/.local/share/kiro-cli/data.sqlite3")
+
+        print(f"Normalized home path: {result}")
+        assert result == str(Path("~/.local/share/kiro-cli/data.sqlite3").expanduser())
+
+    def test_strips_surrounding_quotes(self):
+        """
+        What it does: Removes shell-style wrapping quotes around paths.
+        Purpose: Handle quoted .env values consistently.
+        """
+        from kiro.config import normalize_config_path
+
+        result = normalize_config_path('"~/kiro creds/token.json"')
+
+        print(f"Normalized quoted path: {result}")
+        assert result == str(Path("~/kiro creds/token.json").expanduser())
 
 
 class TestFallbackModelsConfig:
