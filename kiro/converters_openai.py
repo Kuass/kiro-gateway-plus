@@ -414,7 +414,18 @@ def build_kiro_payload(
     """
     # Convert messages to unified format
     system_prompt, unified_messages = convert_openai_messages_to_unified(request_data.messages)
-    
+
+    # If response_format requests JSON, inject instruction into system prompt
+    response_format = request_data.response_format or {}
+    if response_format.get("type") in ("json_object", "json_schema"):
+        json_instruction = (
+            "\n\nIMPORTANT: You must respond with valid JSON only. "
+            "Do not wrap the JSON in markdown code blocks or backticks. "
+            "Output only the raw JSON object, nothing else."
+        )
+        system_prompt = system_prompt + json_instruction if system_prompt else json_instruction.strip()
+        logger.debug(f"response_format={response_format.get('type')}: injected JSON instruction into system prompt")
+
     # Convert tools to unified format
     unified_tools = convert_openai_tools_to_unified(request_data.tools)
     
