@@ -696,6 +696,37 @@ class TestCollectAnthropicResponse:
         print("✓ Usage info included")
 
     @pytest.mark.asyncio
+    async def test_preserves_logical_input_tokens_when_context_usage_available(
+        self, mock_response, mock_model_cache, mock_auth_manager
+    ):
+        """
+        What it does: Keeps Anthropic input_tokens based on request-token estimation.
+        Goal: Ensure Kiro context usage does not inflate logical input token usage.
+        """
+        print("Setup: Mock stream result with high Kiro context usage...")
+
+        mock_result = StreamResult(
+            content="Hello",
+            thinking_content="",
+            tool_calls=[],
+            usage=None,
+            context_usage_percentage=50.0
+        )
+
+        with patch('kiro.streaming_anthropic.collect_stream_to_result', return_value=mock_result):
+            with patch('kiro.streaming_anthropic.estimate_request_tokens', return_value={"total_tokens": 10}):
+                with patch('kiro.streaming_anthropic.count_tokens', return_value=1):
+                    result = await collect_anthropic_response(
+                        mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
+                        request_messages=[{"role": "user", "content": "Hi"}]
+                    )
+
+        print(f"Usage: {result['usage']}")
+        assert result["usage"]["input_tokens"] == 10
+        assert result["usage"]["output_tokens"] == 1
+        print("✓ Logical Anthropic input_tokens preserved")
+
+    @pytest.mark.asyncio
     async def test_counts_tool_use_content_in_output_tokens(self, mock_response, mock_model_cache, mock_auth_manager):
         """
         What it does: Counts Anthropic tool_use name and input as assistant output tokens.
