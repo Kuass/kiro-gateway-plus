@@ -26,7 +26,7 @@ Reference: https://docs.anthropic.com/en/api/messages
 """
 
 import json
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Security, Header
@@ -34,13 +34,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
 
-from kiro.config import PROXY_API_KEY
+from kiro.config import PROXY_API_KEY, API_KEY_SOURCE, BILLING_ENABLED
 from kiro.models_anthropic import (
     AnthropicMessagesRequest,
     AnthropicCountTokensRequest,
     AnthropicMessagesResponse,
     AnthropicErrorResponse,
     AnthropicErrorDetail,
+    TextContentBlock,
 )
 from kiro.auth import KiroAuthManager, AuthType
 from kiro.cache import ModelInfoCache
@@ -55,6 +56,18 @@ from kiro.utils import generate_conversation_id
 from kiro.tokenizer import estimate_request_tokens
 from kiro.config import WEB_SEARCH_ENABLED
 from kiro.mcp_tools import handle_native_web_search
+from kiro.mongodb_store import (
+    find_active_user_by_api_key,
+    get_user_id_from_doc,
+    MongoStoreUnavailableError,
+)
+from kiro.billing import (
+    calculate_preflight_charge,
+    ensure_user_has_sufficient_credits,
+    deduct_credits_for_usage,
+    InsufficientCreditsError,
+    UnknownModelPricingError,
+)
 
 # Import debug_logger
 try:
@@ -71,8 +84,9 @@ auth_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
 async def verify_anthropic_api_key(
-    x_api_key: Optional[str] = Security(anthropic_api_key_header),
-    authorization: Optional[str] = Security(auth_header)
+    x_api_key: Optional[str],
+    authorization: Optional[str],
+    request: Optional[Request] = None,
 ) -> bool:
     """
     Verify API key for Anthropic API.
@@ -91,12 +105,87 @@ async def verify_anthropic_api_key(
     Raises:
         HTTPException: 401 if key is invalid or missing
     """
+    if API_KEY_SOURCE == "mongodb":
+        token: Optional[str] = None
+        if x_api_key:
+            token = x_api_key
+        elif authorization and authorization.startswith("Bearer "):
+            bearer_token = authorization[len("Bearer "):]
+            token = bearer_token if bearer_token else None
+
+        if token is None:
+            logger.warning("Access attempt with missing API key in MongoDB auth mode (Anthropic endpoint)")
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "type": "error",
+                    "error": {
+                        "type": "authentication_error",
+                        "message": "Invalid or missing API key. Use x-api-key header or Authorization: Bearer.",
+                    },
+                },
+            )
+
+        try:
+            user_doc = find_active_user_by_api_key(token)
+        except MongoStoreUnavailableError:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "type": "error",
+                    "error": {
+                        "type": "api_error",
+                        "message": "Authentication datastore unavailable",
+                    },
+                },
+            )
+
+        if user_doc is None:
+            logger.warning("Access attempt with unknown or inactive API key in MongoDB auth mode")
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "type": "error",
+                    "error": {
+                        "type": "authentication_error",
+                        "message": "Invalid or missing API key. Use x-api-key header or Authorization: Bearer.",
+                    },
+                },
+            )
+
+        try:
+            user_id = get_user_id_from_doc(user_doc)
+        except KeyError:
+            logger.error("MongoDB user document does not contain configured user ID field.")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "type": "error",
+                    "error": {
+                        "type": "api_error",
+                        "message": "Authentication configuration error",
+                    },
+                },
+            )
+
+        if request is not None:
+            request.state.auth_context = {
+                "source": "mongodb",
+                "user_id": user_id,
+                "api_key": token,
+            }
+        return True
+
     # Check x-api-key first (Anthropic native)
     if x_api_key and x_api_key == PROXY_API_KEY:
+        if request is not None:
+            request.state.auth_context = {"source": "env", "user_id": None, "api_key": PROXY_API_KEY}
         return True
-    
+
     # Fall back to Authorization: Bearer
     if authorization and authorization == f"Bearer {PROXY_API_KEY}":
+        if request is not None:
+            request.state.auth_context = {"source": "env", "user_id": None, "api_key": PROXY_API_KEY}
         return True
     
     logger.warning("Access attempt with invalid API key (Anthropic endpoint)")
@@ -112,11 +201,34 @@ async def verify_anthropic_api_key(
     )
 
 
+async def verify_anthropic_api_key_dependency(
+    request: Request,
+    x_api_key: Optional[str] = Security(anthropic_api_key_header),
+    authorization: Optional[str] = Security(auth_header),
+) -> bool:
+    """
+    FastAPI dependency adapter for Anthropic API-key verification.
+
+    Args:
+        request: Current request object.
+        x_api_key: x-api-key header value.
+        authorization: Authorization header value.
+
+    Returns:
+        True when request is authenticated.
+    """
+    return await verify_anthropic_api_key(
+        x_api_key=x_api_key,
+        authorization=authorization,
+        request=request,
+    )
+
+
 # --- Router ---
 router = APIRouter(tags=["Anthropic API"])
 
 
-@router.post("/v1/messages", dependencies=[Depends(verify_anthropic_api_key)])
+@router.post("/v1/messages", dependencies=[Depends(verify_anthropic_api_key_dependency)])
 async def messages(
     request: Request,
     request_data: AnthropicMessagesRequest,
@@ -149,6 +261,9 @@ async def messages(
     
     if anthropic_version:
         logger.debug(f"Anthropic-Version header: {anthropic_version}")
+    
+    auth_context: Dict[str, Any] = getattr(request.state, "auth_context", {})
+    billing_user_id = auth_context.get("user_id")
     
     # Note: prepare_new_request() and log_request_body() are now called by DebugLoggerMiddleware
     # This ensures debug logging works even for requests that fail Pydantic validation (422 errors)
@@ -235,7 +350,7 @@ async def messages(
                     # Then add synthetic user message about truncation
                     synthetic_user_msg = AnthropicMessage(
                         role="user",
-                        content=[{"type": "text", "text": generate_truncation_user_message()}]
+                        content=[TextContentBlock(text=generate_truncation_user_message())]
                     )
                     modified_messages.append(synthetic_user_msg)
                     content_notices_added += 1
@@ -741,6 +856,26 @@ async def messages(
         system_for_tokenizer = [b.model_dump() if hasattr(b, "model_dump") else b for b in request_data.system]
     else:
         system_for_tokenizer = request_data.system
+
+    prompt_tokens = estimate_request_tokens(
+        messages=messages_for_tokenizer,
+        tools=tools_for_tokenizer,
+        system_prompt=system_for_tokenizer,
+        apply_claude_correction=False,
+    )["total_tokens"]
+
+    if BILLING_ENABLED and billing_user_id is not None:
+        try:
+            required_credits = calculate_preflight_charge(
+                model_id=request_data.model,
+                prompt_tokens=prompt_tokens,
+                tool_tokens=0,
+            )
+            ensure_user_has_sufficient_credits(billing_user_id, required_credits)
+        except UnknownModelPricingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except InsufficientCreditsError as exc:
+            raise HTTPException(status_code=402, detail=str(exc))
     
     try:
         # Make request to Kiro API (for both streaming and non-streaming modes)
@@ -801,6 +936,7 @@ async def messages(
             async def stream_wrapper():
                 streaming_error = None
                 client_disconnected = False
+                final_usage: Optional[Dict[str, Any]] = None
                 try:
                     # Create retry request function for retries
                     async def make_retry_request():
@@ -819,7 +955,29 @@ async def messages(
                         request_tools=tools_for_tokenizer,
                         request_system=system_for_tokenizer,
                     ):
+                        if chunk.startswith("event: message_delta"):
+                            lines = chunk.strip().splitlines()
+                            if len(lines) >= 2 and lines[1].startswith("data: "):
+                                payload = lines[1][len("data: "):]
+                                try:
+                                    payload_data = json.loads(payload)
+                                except json.JSONDecodeError:
+                                    payload_data = None
+
+                                if isinstance(payload_data, dict):
+                                    usage_payload = payload_data.get("usage")
+                                    if isinstance(usage_payload, dict):
+                                        final_usage = {
+                                            "input_tokens": prompt_tokens,
+                                            "output_tokens": usage_payload.get("output_tokens", 0),
+                                        }
                         yield chunk
+
+                    if BILLING_ENABLED and billing_user_id is not None and final_usage is not None:
+                        try:
+                            deduct_credits_for_usage(billing_user_id, request_data.model, final_usage)
+                        except (InsufficientCreditsError, UnknownModelPricingError) as exc:
+                            logger.error(f"Post-stream Anthropic billing deduction failed: {exc}")
                 except GeneratorExit:
                     client_disconnected = True
                     logger.debug("Client disconnected during streaming (GeneratorExit in routes)")
@@ -858,6 +1016,10 @@ async def messages(
             )
         
         else:
+            non_stream_client = http_client.client
+            if non_stream_client is None:
+                raise HTTPException(status_code=500, detail="Internal Server Error: HTTP client not initialized")
+
             # Non-streaming mode - collect entire response
             anthropic_response = await collect_anthropic_response(
                 response,
@@ -868,6 +1030,17 @@ async def messages(
                 request_tools=tools_for_tokenizer,
                 request_system=system_for_tokenizer,
             )
+
+            if BILLING_ENABLED and billing_user_id is not None:
+                usage_payload = anthropic_response.get("usage") if isinstance(anthropic_response, dict) else None
+                if isinstance(usage_payload, dict):
+                    try:
+                        charged = deduct_credits_for_usage(billing_user_id, request_data.model, usage_payload)
+                        usage_payload["credits_used"] = float(charged)
+                    except UnknownModelPricingError as exc:
+                        raise HTTPException(status_code=400, detail=str(exc))
+                    except InsufficientCreditsError as exc:
+                        raise HTTPException(status_code=402, detail=str(exc))
             
             await http_client.close()
             
@@ -909,7 +1082,7 @@ async def messages(
         )
 
 
-@router.post("/v1/messages/count_tokens", dependencies=[Depends(verify_anthropic_api_key)])
+@router.post("/v1/messages/count_tokens", dependencies=[Depends(verify_anthropic_api_key_dependency)])
 async def count_tokens_endpoint(
     request: Request,
     request_data: AnthropicCountTokensRequest,
