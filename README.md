@@ -11,6 +11,13 @@
 > - [#85](https://github.com/jwadow/kiro-gateway/pull/85) — reuse the shared HTTP client during startup model fetch (`2eea897`, merged by `4a06d78`).
 > - [#87](https://github.com/jwadow/kiro-gateway/pull/87) — count prompt tokens from the full Kiro payload (`382b3c3`, merged by `c9606eb`).
 >
+> **Open upstream PRs manually reviewed and applied on 2026-05-08:**
+> - [#143](https://github.com/jwadow/kiro-gateway/pull/143) — preserve Anthropic logical input token usage; applied as a current-code subset because this fork already has count-token routing (`71a65f3`).
+> - [#149](https://github.com/jwadow/kiro-gateway/pull/149) — include `tool_use` / tool-call content in output token accounting, with added regression tests (`632ef51`).
+> - [#150](https://github.com/jwadow/kiro-gateway/pull/150) — honor explicit `PROFILE_ARN` for SSO OIDC request payloads (`b9a2f1e`).
+> - [#152](https://github.com/jwadow/kiro-gateway/pull/152) — normalize credential and SQLite paths for Windows compatibility (`2f41e3e`).
+> - [#155](https://github.com/jwadow/kiro-gateway/pull/155) — migrate Kiro API calls to `runtime.<region>.kiro.dev` for the May 15, 2026 endpoint change (`688f80a`).
+>
 > **Additional fork-only patches:**
 > - `response_format` JSON instruction support for OpenAI-compatible requests (`f145f5d`).
 > - Upstream sync/reconciliation commits after rebasing the fork onto current upstream (`4fd8bc1` and follow-up commits).
