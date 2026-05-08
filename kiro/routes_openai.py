@@ -47,7 +47,7 @@ from kiro.models_openai import (
     ModelList,
     ChatCompletionRequest,
 )
-from kiro.auth import KiroAuthManager, AuthType
+from kiro.auth import KiroAuthManager
 from kiro.cache import ModelInfoCache
 from kiro.model_resolver import ModelResolver
 from kiro.converters_openai import build_kiro_payload
@@ -436,12 +436,9 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
             # Generate conversation ID
             conversation_id = generate_conversation_id()
             
-            # Build payload for Kiro
-            profile_arn_for_payload = ""
-            if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
-                profile_arn_for_payload = auth_manager.profile_arn
-            elif PROFILE_ARN:
-                profile_arn_for_payload = PROFILE_ARN
+            # profileArn is required by runtime.kiro.dev for all auth types.
+            # Prefer account credentials, then explicit PROFILE_ARN as an operator fallback.
+            profile_arn_for_payload = auth_manager.profile_arn or PROFILE_ARN or ""
             
             try:
                 kiro_payload = build_kiro_payload(
@@ -745,14 +742,9 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     # Generate conversation ID for Kiro API (random UUID, not used for tracking)
     conversation_id = generate_conversation_id()
     
-    # Build payload for Kiro
-    # profileArn is only needed for Kiro Desktop auth
-    # AWS SSO OIDC (Builder ID) users don't need profileArn and it causes 403 if sent
-    profile_arn_for_payload = ""
-    if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
-        profile_arn_for_payload = auth_manager.profile_arn
-    elif PROFILE_ARN:
-        profile_arn_for_payload = PROFILE_ARN
+    # profileArn is required by runtime.kiro.dev for all auth types.
+    # Prefer account credentials, then explicit PROFILE_ARN as an operator fallback.
+    profile_arn_for_payload = auth_manager.profile_arn or PROFILE_ARN or ""
 
     try:
         kiro_payload = build_kiro_payload(

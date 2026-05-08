@@ -6,6 +6,7 @@ Tests retry logic, error handling, and HTTP client management.
 """
 
 import asyncio
+import json
 import pytest
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from datetime import datetime, timezone, timedelta
@@ -1046,7 +1047,7 @@ class TestKiroHttpClientConnectionCloseHeader:
         mock_request = Mock()
         captured_headers = {}
         
-        def capture_build_request(method, url, json, headers):
+        def capture_build_request(method, url, content, headers):
             captured_headers.update(headers)
             return mock_request
         
@@ -1086,7 +1087,7 @@ class TestKiroHttpClientConnectionCloseHeader:
         
         captured_headers = {}
         
-        async def capture_request(method, url, json, headers):
+        async def capture_request(method, url, content, headers):
             captured_headers.update(headers)
             return mock_response
         
@@ -1124,7 +1125,7 @@ class TestKiroHttpClientConnectionCloseHeader:
         mock_request = Mock()
         captured_headers = {}
         
-        def capture_build_request(method, url, json, headers):
+        def capture_build_request(method, url, content, headers):
             captured_headers.update(headers)
             return mock_request
         
@@ -1273,10 +1274,10 @@ class TestKiroHttpClientRequestParameters:
                     params={"filter": "active"}
                 )
         
-        print("Verification: Both params and json passed...")
+        print("Verification: Both params and content passed...")
         print(f"Captured kwargs: {captured_kwargs}")
         assert "params" in captured_kwargs, f"params not found: {captured_kwargs}"
-        assert "json" in captured_kwargs, f"json not found: {captured_kwargs}"
+        assert "content" in captured_kwargs, f"content not found: {captured_kwargs}"
         assert captured_kwargs["params"]["filter"] == "active"
-        assert captured_kwargs["json"]["data"] == "value"
+        assert json.loads(captured_kwargs["content"])["data"] == "value"
         assert response.status_code == 200

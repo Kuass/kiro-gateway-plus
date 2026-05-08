@@ -341,7 +341,7 @@ class KiroAuthManager:
                     if 'region' in registration_data and not self._sso_region:
                         self._sso_region = registration_data['region']
                         logger.debug(f"SSO region from device-registration: {self._sso_region}")
-            
+
             # Try to auto-detect API region from profile ARN in state table
             # This is separate from SSO region because q.amazonaws.com endpoints
             # only exist in specific regions (Issue #132, #133)
@@ -352,6 +352,9 @@ class KiroAuthManager:
                     profile_data = json.loads(profile_row[0])
                     arn = profile_data.get("arn", "")
                     if arn:
+                        if not self._profile_arn:
+                            self._profile_arn = arn
+                            logger.debug(f"Profile ARN from state table: {self._profile_arn}")
                         # ARN format: arn:aws:codewhisperer:REGION:account:profile/id
                         # Extract region from 4th component (index 3)
                         parts = arn.split(":")
@@ -368,7 +371,7 @@ class KiroAuthManager:
                 logger.debug(f"Failed to parse profile data from state table: {e}")
             except Exception as e:
                 logger.debug(f"Failed to auto-detect API region from profile ARN: {e}")
-            
+
             conn.close()
             logger.info(f"Credentials loaded from SQLite database: {db_path}")
             

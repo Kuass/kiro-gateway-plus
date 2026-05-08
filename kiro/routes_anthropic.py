@@ -43,7 +43,7 @@ from kiro.models_anthropic import (
     AnthropicErrorDetail,
     TextContentBlock,
 )
-from kiro.auth import KiroAuthManager, AuthType
+from kiro.auth import KiroAuthManager
 from kiro.cache import ModelInfoCache
 from kiro.converters_anthropic import anthropic_to_kiro
 from kiro.streaming_anthropic import (
@@ -490,12 +490,9 @@ async def messages(
             # Generate conversation ID
             conversation_id = generate_conversation_id()
             
-            # Build payload for Kiro
-            profile_arn_for_payload = ""
-            if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
-                profile_arn_for_payload = auth_manager.profile_arn
-            elif PROFILE_ARN:
-                profile_arn_for_payload = PROFILE_ARN
+            # profileArn is required by runtime.kiro.dev for all auth types.
+            # Prefer account credentials, then explicit PROFILE_ARN as an operator fallback.
+            profile_arn_for_payload = auth_manager.profile_arn or PROFILE_ARN or ""
             
             try:
                 kiro_payload = anthropic_to_kiro(
@@ -882,13 +879,9 @@ async def messages(
     # Generate conversation ID for Kiro API (random UUID, not used for tracking)
     conversation_id = generate_conversation_id()
     
-    # Build payload for Kiro
-    # profileArn is only needed for Kiro Desktop auth
-    profile_arn_for_payload = ""
-    if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
-        profile_arn_for_payload = auth_manager.profile_arn
-    elif PROFILE_ARN:
-        profile_arn_for_payload = PROFILE_ARN
+    # profileArn is required by runtime.kiro.dev for all auth types.
+    # Prefer account credentials, then explicit PROFILE_ARN as an operator fallback.
+    profile_arn_for_payload = auth_manager.profile_arn or PROFILE_ARN or ""
 
     try:
         kiro_payload = anthropic_to_kiro(

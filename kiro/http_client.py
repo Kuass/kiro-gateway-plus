@@ -31,6 +31,7 @@ with connection pooling for better resource management.
 """
 
 import asyncio
+import json
 from typing import Optional
 
 import httpx
@@ -218,7 +219,7 @@ class KiroHttpClient:
                 request_kwargs = {"headers": headers}
                 
                 if json_data is not None:
-                    request_kwargs["json"] = json_data
+                    request_kwargs["content"] = json.dumps(json_data).encode()
                 
                 if params is not None:
                     request_kwargs["params"] = params

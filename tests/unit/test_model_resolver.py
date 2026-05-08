@@ -582,53 +582,53 @@ class TestGetModelIdForKiro:
     
     def test_returns_internal_id_for_hidden_model(self):
         """
-        What it does: Returns internal ID for hidden model.
-        Goal: Check hidden model resolution.
+        What it does: Returns runtime-valid ID for hidden model.
+        Goal: Check hidden model resolution maps to valid runtime ID.
         """
         hidden = {"claude-3.7-sonnet": "CLAUDE_3_7_SONNET_20250219_V1_0"}
-        
+
         print("Action: get_model_id_for_kiro('claude-3.7-sonnet', hidden)...")
         result = get_model_id_for_kiro("claude-3.7-sonnet", hidden)
-        
-        print(f"Comparing result: Expected 'CLAUDE_3_7_SONNET_20250219_V1_0', Got '{result}'")
-        assert result == "CLAUDE_3_7_SONNET_20250219_V1_0"
-    
+
+        print(f"Comparing result: Expected 'auto' (invalid runtime ID falls back), Got '{result}'")
+        assert result == "auto"
+
     def test_normalizes_then_checks_hidden(self):
         """
         What it does: Normalizes first, then checks hidden.
         Goal: Check operation order.
         """
         hidden = {"claude-3.7-sonnet": "CLAUDE_3_7_SONNET_20250219_V1_0"}
-        
+
         print("Action: get_model_id_for_kiro('claude-3-7-sonnet', hidden)...")
         result = get_model_id_for_kiro("claude-3-7-sonnet", hidden)
-        
-        print(f"Comparing result: Expected 'CLAUDE_3_7_SONNET_20250219_V1_0', Got '{result}'")
-        assert result == "CLAUDE_3_7_SONNET_20250219_V1_0"
-    
+
+        print(f"Comparing result: Expected 'auto' (invalid runtime ID falls back), Got '{result}'")
+        assert result == "auto"
+
     def test_normalizes_with_date_then_checks_hidden(self):
         """
         What it does: Normalizes with date suffix, then checks hidden.
         Goal: Check full normalization chain.
         """
         hidden = {"claude-3.7-sonnet": "CLAUDE_3_7_SONNET_20250219_V1_0"}
-        
+
         print("Action: get_model_id_for_kiro('claude-3-7-sonnet-20250219', hidden)...")
         result = get_model_id_for_kiro("claude-3-7-sonnet-20250219", hidden)
-        
-        print(f"Comparing result: Expected 'CLAUDE_3_7_SONNET_20250219_V1_0', Got '{result}'")
-        assert result == "CLAUDE_3_7_SONNET_20250219_V1_0"
-    
+
+        print(f"Comparing result: Expected 'auto' (invalid runtime ID falls back), Got '{result}'")
+        assert result == "auto"
+
     def test_passthrough_unknown_model(self):
         """
-        What it does: Passthrough for unknown models.
-        Goal: Check that unknown models pass through normalized.
+        What it does: Unknown models default to 'auto' for runtime endpoint.
+        Goal: Check that unknown models get mapped to 'auto'.
         """
         print("Action: get_model_id_for_kiro('claude-unknown-model', {})...")
         result = get_model_id_for_kiro("claude-unknown-model", {})
-        
-        print(f"Comparing result: Expected 'claude-unknown-model', Got '{result}'")
-        assert result == "claude-unknown-model"
+
+        print(f"Comparing result: Expected 'auto', Got '{result}'")
+        assert result == "auto"
 
     def test_rejects_model_outside_allowlist_when_enabled(self, monkeypatch):
         """
@@ -718,36 +718,36 @@ class TestModelResolverResolve:
     def test_resolve_finds_model_in_hidden(self, model_resolver):
         """
         What it does: Finds model in hidden models.
-        Goal: Check Layer 3 (Hidden Models).
+        Goal: Check Layer 3 (Hidden Models) maps to valid runtime ID.
         """
         print("Action: Resolving 'claude-3-7-sonnet'...")
         result = model_resolver.resolve("claude-3-7-sonnet")
-        
+
         print(f"Check result: {result}")
-        print(f"Comparing internal_id: Expected 'CLAUDE_3_7_SONNET_20250219_V1_0', Got '{result.internal_id}'")
-        assert result.internal_id == "CLAUDE_3_7_SONNET_20250219_V1_0"
-        
+        print(f"Comparing internal_id: Expected 'auto' (hidden maps to invalid runtime ID), Got '{result.internal_id}'")
+        assert result.internal_id == "auto"
+
         print(f"Comparing source: Expected 'hidden', Got '{result.source}'")
         assert result.source == "hidden"
-        
+
         print(f"Comparing is_verified: Expected True, Got {result.is_verified}")
         assert result.is_verified is True
-    
+
     def test_resolve_passthrough_for_unknown(self, model_resolver):
         """
-        What it does: Passthrough for unknown model.
-        Goal: Check Layer 4 (Pass-through).
+        What it does: Passthrough for unknown model defaults to 'auto'.
+        Goal: Check Layer 4 validates for runtime endpoint.
         """
         print("Action: Resolving 'claude-haiku-4-6' (does not exist)...")
         result = model_resolver.resolve("claude-haiku-4-6")
-        
+
         print(f"Check result: {result}")
-        print(f"Comparing internal_id: Expected 'claude-haiku-4.6', Got '{result.internal_id}'")
-        assert result.internal_id == "claude-haiku-4.6"
-        
+        print(f"Comparing internal_id: Expected 'auto', Got '{result.internal_id}'")
+        assert result.internal_id == "auto"
+
         print(f"Comparing source: Expected 'passthrough', Got '{result.source}'")
         assert result.source == "passthrough"
-        
+
         print(f"Comparing is_verified: Expected False, Got {result.is_verified}")
         assert result.is_verified is False
     
@@ -1427,41 +1427,41 @@ class TestModelAliasSystemEdgeCases:
     
     def test_alias_to_non_existent_model(self, mock_model_cache):
         """
-        What it does: Alias pointing to non-existent model.
-        Purpose: Ensure passthrough works for aliased non-existent models.
+        What it does: Alias pointing to non-existent model defaults to 'auto'.
+        Purpose: Ensure runtime validation applies for aliased non-existent models.
         """
         print("Setup: Creating resolver with alias to non-existent model...")
         aliases = {"future-model": "claude-haiku-5.0"}
         resolver = ModelResolver(cache=mock_model_cache, aliases=aliases)
-        
+
         print("Action: Resolving 'future-model'...")
         result = resolver.resolve("future-model")
-        
-        print(f"Comparing internal_id: Expected 'claude-haiku-5.0', Got '{result.internal_id}'")
-        assert result.internal_id == "claude-haiku-5.0"
-        
+
+        print(f"Comparing internal_id: Expected 'auto', Got '{result.internal_id}'")
+        assert result.internal_id == "auto"
+
         print(f"Comparing source: Expected 'passthrough', Got '{result.source}'")
         assert result.source == "passthrough"
-        
+
         print(f"Comparing is_verified: Expected False, Got {result.is_verified}")
         assert result.is_verified is False
-    
+
     def test_alias_to_hidden_model(self, mock_model_cache):
         """
         What it does: Alias pointing to hidden model.
-        Purpose: Ensure alias works with hidden models.
+        Purpose: Ensure alias works with hidden models and runtime validation.
         """
         print("Setup: Creating resolver with alias to hidden model...")
         hidden = {"claude-3.7-sonnet": "CLAUDE_3_7_SONNET_20250219_V1_0"}
         aliases = {"legacy-sonnet": "claude-3.7-sonnet"}
         resolver = ModelResolver(cache=mock_model_cache, hidden_models=hidden, aliases=aliases)
-        
+
         print("Action: Resolving 'legacy-sonnet'...")
         result = resolver.resolve("legacy-sonnet")
-        
-        print(f"Comparing internal_id: Expected 'CLAUDE_3_7_SONNET_20250219_V1_0', Got '{result.internal_id}'")
-        assert result.internal_id == "CLAUDE_3_7_SONNET_20250219_V1_0"
-        
+
+        print(f"Comparing internal_id: Expected 'auto' (invalid runtime ID), Got '{result.internal_id}'")
+        assert result.internal_id == "auto"
+
         print(f"Comparing source: Expected 'hidden', Got '{result.source}'")
         assert result.source == "hidden"
     
@@ -1516,13 +1516,13 @@ class TestModelAliasSystemEdgeCases:
         print("Setup: Creating resolver with lowercase alias...")
         aliases = {"auto-kiro": "auto"}
         resolver = ModelResolver(cache=mock_model_cache, aliases=aliases)
-        
+
         print("Action: Resolving 'AUTO-KIRO' (uppercase)...")
         result = resolver.resolve("AUTO-KIRO")
-        
-        print(f"Comparing internal_id: Expected 'AUTO-KIRO' (passthrough preserves case), Got '{result.internal_id}'")
-        # Should NOT match alias, should passthrough as-is (preserving original case)
-        assert result.internal_id == "AUTO-KIRO"
+
+        print(f"Comparing internal_id: Expected 'auto' (runtime validation), Got '{result.internal_id}'")
+        # Should NOT match alias, goes through passthrough, maps to 'auto' via runtime validation
+        assert result.internal_id == "auto"
         assert result.source == "passthrough"
 
 
@@ -1745,17 +1745,17 @@ class TestAliasSystemSecurity:
         print("Setup: Creating resolver with alias...")
         aliases = {"my-model": "claude-opus-5"}
         resolver = ModelResolver(cache=mock_model_cache, aliases=aliases)
-        
+
         print("Action: Resolving 'my-model' (points to non-existent Opus)...")
         result = resolver.resolve("my-model")
-        
+
         print(f"Result: {result}")
         print("Check: Does NOT fallback to Sonnet or Haiku...")
         assert "sonnet" not in result.internal_id.lower()
         assert "haiku" not in result.internal_id.lower()
-        
-        print("Check: Passthrough preserves family...")
-        assert "opus" in result.internal_id.lower()
+
+        print("Check: Unknown models default to 'auto' (safe fallback)...")
+        assert result.internal_id == "auto"
     
     def test_alias_suggestions_respect_target_family(self, mock_model_cache):
         """
