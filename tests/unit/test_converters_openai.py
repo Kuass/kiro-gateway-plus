@@ -17,6 +17,8 @@ from kiro.converters_openai import (
     convert_openai_messages_to_unified,
     convert_openai_tools_to_unified,
     _extract_images_from_tool_message,
+    reasoning_effort_to_budget,
+    extract_thinking_config_from_openai,
 )
 from kiro.models_openai import ChatMessage, ChatCompletionRequest, Tool, ToolFunction
 
@@ -1614,105 +1616,259 @@ class TestConvertOpenAIMessagesWithToolImages:
         assert unified[1].role == "user"
         assert unified[1].content == "What do you see?"
 
+
 # ==================================================================================================
-# Tests for response_format JSON instruction injection
+# Tests for Client Thinking Budget Support (Issue #111)
 # ==================================================================================================
 
-class TestResponseFormatJsonInjection:
-    """Tests for response_format → system prompt JSON instruction injection."""
+class TestReasoningEffortToBudget:
+    """Tests for reasoning_effort_to_budget function."""
+    
+    def test_none_returns_zero(self):
+        """
+        What it does: Verifies reasoning_effort="none" returns 0 tokens
+        Purpose: Ensure "none" disables thinking budget
+        """
+        print("Testing reasoning_effort='none'...")
+        result = reasoning_effort_to_budget(4096, "none")
+        
+        print(f"Comparing: expected=0, got={result}")
+        assert result == 0
+    
+    def test_minimal_returns_10_percent(self):
+        """
+        What it does: Verifies reasoning_effort="minimal" returns 10% of max_tokens
+        Purpose: Ensure minimal reasoning uses 10% budget
+        """
+        print("Testing reasoning_effort='minimal' with max_tokens=4096...")
+        result = reasoning_effort_to_budget(4096, "minimal")
+        expected = int(4096 * 0.10)
+        
+        print(f"Comparing: expected={expected}, got={result}")
+        assert result == expected
+    
+    def test_low_returns_20_percent(self):
+        """
+        What it does: Verifies reasoning_effort="low" returns 20%
+        Purpose: Ensure low reasoning uses 20% budget
+        """
+        print("Testing reasoning_effort='low' with max_tokens=4096...")
+        result = reasoning_effort_to_budget(4096, "low")
+        expected = int(4096 * 0.20)
+        
+        print(f"Comparing: expected={expected}, got={result}")
+        assert result == expected
+    
+    def test_medium_returns_50_percent(self):
+        """
+        What it does: Verifies reasoning_effort="medium" returns 50%
+        Purpose: Ensure medium reasoning uses 50% budget
+        """
+        print("Testing reasoning_effort='medium' with max_tokens=4096...")
+        result = reasoning_effort_to_budget(4096, "medium")
+        expected = int(4096 * 0.50)
+        
+        print(f"Comparing: expected={expected}, got={result}")
+        assert result == expected
+    
+    def test_high_returns_80_percent(self):
+        """
+        What it does: Verifies reasoning_effort="high" returns 80%
+        Purpose: Ensure high reasoning uses 80% budget
+        """
+        print("Testing reasoning_effort='high' with max_tokens=4096...")
+        result = reasoning_effort_to_budget(4096, "high")
+        expected = int(4096 * 0.80)
+        
+        print(f"Comparing: expected={expected}, got={result}")
+        assert result == expected
+    
+    def test_xhigh_returns_95_percent(self):
+        """
+        What it does: Verifies reasoning_effort="xhigh" returns 95%
+        Purpose: Ensure maximum reasoning uses 95% budget
+        """
+        print("Testing reasoning_effort='xhigh' with max_tokens=4096...")
+        result = reasoning_effort_to_budget(4096, "xhigh")
+        expected = int(4096 * 0.95)
+        
+        print(f"Comparing: expected={expected}, got={result}")
+        assert result == expected
+    
+    def test_adapts_to_different_max_tokens(self):
+        """
+        What it does: Verifies percentage-based mapping adapts to different max_tokens
+        Purpose: Ensure budget scales proportionally with output limit
+        """
+        print("Testing with different max_tokens values...")
+        
+        # Test with 10000 tokens
+        result_10k = reasoning_effort_to_budget(10000, "high")
+        expected_10k = int(10000 * 0.80)
+        print(f"  max_tokens=10000, high: expected={expected_10k}, got={result_10k}")
+        assert result_10k == expected_10k
+        
+        # Test with 2000 tokens
+        result_2k = reasoning_effort_to_budget(2000, "high")
+        expected_2k = int(2000 * 0.80)
+        print(f"  max_tokens=2000, high: expected={expected_2k}, got={result_2k}")
+        assert result_2k == expected_2k
 
-    MOCK_CONV_ID = "test-conv-id"
-    MOCK_PROFILE_ARN = "arn:aws:iam::123456789012:user/test"
 
-    def _make_request(self, response_format=None, system_prompt=None):
-        messages = []
-        if system_prompt:
-            messages.append(ChatMessage(role="system", content=system_prompt))
-        messages.append(ChatMessage(role="user", content="Hello"))
-        return ChatCompletionRequest(
-            model="claude-sonnet-4-5",
-            messages=messages,
-            response_format=response_format,
+class TestExtractThinkingConfigFromOpenAI:
+    """Tests for extract_thinking_config_from_openai function."""
+    
+    def test_no_reasoning_effort(self):
+        """
+        What it does: Verifies ThinkingConfig(enabled=True, budget_tokens=None) when reasoning_effort=None
+        Purpose: Ensure default configuration when reasoning_effort not specified
+        """
+        print("Creating request without reasoning_effort...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")]
         )
-
-    def _get_injected_content(self, request):
-        """Build payload and return the content that contains the system prompt."""
-        with patch("kiro.converters_openai.get_model_id_for_kiro", return_value="anthropic.claude-sonnet-4-5"):
-            payload = build_kiro_payload(request, self.MOCK_CONV_ID, self.MOCK_PROFILE_ARN)
-        # System prompt is prepended to the first (and only) userInputMessage content
-        return payload["conversationState"]["currentMessage"]["userInputMessage"]["content"]
-
-    def test_json_object_injects_instruction(self):
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        
+        print(f"Comparing: enabled={config.enabled}, budget_tokens={config.budget_tokens}")
+        assert config.enabled is True
+        assert config.budget_tokens is None
+    
+    def test_reasoning_effort_none(self):
         """
-        What it does: Verifies JSON instruction is injected when response_format is json_object.
-        Purpose: Ensure model returns raw JSON without markdown code blocks.
+        What it does: Verifies ThinkingConfig(enabled=False) when reasoning_effort="none"
+        Purpose: Ensure thinking is disabled when client explicitly sets "none"
         """
-        print("Setup: Request with response_format json_object...")
-        request = self._make_request(response_format={"type": "json_object"})
-
-        print("Action: Building Kiro payload...")
-        content = self._get_injected_content(request)
-
-        print(f"Result content: {content[:200]}")
-        assert "You must respond with valid JSON only" in content
-        assert "markdown code blocks" in content
-
-    def test_json_schema_injects_instruction(self):
-        """
-        What it does: Verifies JSON instruction is injected when response_format is json_schema.
-        Purpose: Ensure structured output requests also get JSON-only instruction.
-        """
-        print("Setup: Request with response_format json_schema...")
-        request = self._make_request(response_format={"type": "json_schema", "schema": {}})
-
-        print("Action: Building Kiro payload...")
-        content = self._get_injected_content(request)
-
-        print(f"Result content: {content[:200]}")
-        assert "You must respond with valid JSON only" in content
-
-    def test_no_response_format_no_injection(self):
-        """
-        What it does: Verifies no JSON instruction is injected without response_format.
-        Purpose: Ensure normal requests are unaffected.
-        """
-        print("Setup: Request without response_format...")
-        request = self._make_request(response_format=None)
-
-        print("Action: Building Kiro payload...")
-        content = self._get_injected_content(request)
-
-        print(f"Result content: {content[:200]}")
-        assert "You must respond with valid JSON only" not in content
-
-    def test_text_format_no_injection(self):
-        """
-        What it does: Verifies no JSON instruction is injected for response_format text.
-        Purpose: Ensure text format requests are unaffected.
-        """
-        print("Setup: Request with response_format text...")
-        request = self._make_request(response_format={"type": "text"})
-
-        print("Action: Building Kiro payload...")
-        content = self._get_injected_content(request)
-
-        print(f"Result content: {content[:200]}")
-        assert "You must respond with valid JSON only" not in content
-
-    def test_existing_system_prompt_is_preserved(self):
-        """
-        What it does: Verifies existing system prompt is kept when JSON instruction is injected.
-        Purpose: Ensure injection appends rather than replaces.
-        """
-        print("Setup: Request with system prompt and response_format json_object...")
-        request = self._make_request(
-            response_format={"type": "json_object"},
-            system_prompt="You are a helpful assistant.",
+        print("Creating request with reasoning_effort='none'...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")],
+            reasoning_effort="none"
         )
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        
+        print(f"Comparing: enabled={config.enabled}, budget_tokens={config.budget_tokens}")
+        assert config.enabled is False
+        assert config.budget_tokens is None
+    
+    def test_reasoning_effort_minimal(self):
+        """
+        What it does: Verifies correct budget calculation for reasoning_effort="minimal"
+        Purpose: Ensure 10% budget is calculated correctly
+        """
+        print("Creating request with reasoning_effort='minimal', max_tokens=4096...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")],
+            max_tokens=4096,
+            reasoning_effort="minimal"
+        )
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        expected_budget = int(4096 * 0.10)
+        
+        print(f"Comparing: enabled={config.enabled}, budget_tokens={config.budget_tokens}, expected={expected_budget}")
+        assert config.enabled is True
+        assert config.budget_tokens == expected_budget
+    
+    def test_reasoning_effort_high(self):
+        """
+        What it does: Verifies correct budget calculation for reasoning_effort="high"
+        Purpose: Ensure 80% budget is calculated correctly
+        """
+        print("Creating request with reasoning_effort='high', max_tokens=4096...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")],
+            max_tokens=4096,
+            reasoning_effort="high"
+        )
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        expected_budget = int(4096 * 0.80)
+        
+        print(f"Comparing: enabled={config.enabled}, budget_tokens={config.budget_tokens}, expected={expected_budget}")
+        assert config.enabled is True
+        assert config.budget_tokens == expected_budget
+    
+    def test_no_max_tokens_uses_fallback(self):
+        """
+        What it does: Verifies fallback to 4096 when max_tokens not specified
+        Purpose: Ensure reasonable default for OUTPUT tokens (not INPUT tokens)
+        """
+        print("Creating request with reasoning_effort='high' but no max_tokens...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")],
+            reasoning_effort="high"
+        )
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        expected_budget = int(4096 * 0.80)  # Fallback to 4096
+        
+        print(f"Comparing: budget_tokens={config.budget_tokens}, expected={expected_budget}")
+        assert config.budget_tokens == expected_budget
+    
+    def test_uses_max_completion_tokens(self):
+        """
+        What it does: Verifies max_completion_tokens is used when max_tokens is None
+        Purpose: Ensure alternative max_tokens field is supported
+        """
+        print("Creating request with max_completion_tokens=8192...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="test")],
+            max_completion_tokens=8192,
+            reasoning_effort="high"
+        )
+        
+        print("Extracting thinking config...")
+        config = extract_thinking_config_from_openai(request)
+        expected_budget = int(8192 * 0.80)
+        
+        print(f"Comparing: budget_tokens={config.budget_tokens}, expected={expected_budget}")
+        assert config.budget_tokens == expected_budget
 
-        print("Action: Building Kiro payload...")
-        content = self._get_injected_content(request)
 
-        print(f"Result content: {content[:300]}")
-        assert "You are a helpful assistant." in content
-        assert "You must respond with valid JSON only" in content
+class TestBuildKiroPayloadIntegration:
+    """Integration tests for build_kiro_payload with thinking config."""
+    
+    def test_extracts_and_passes_thinking_config(self, monkeypatch):
+        """
+        What it does: Verifies build_kiro_payload extracts thinking_config and passes to core
+        Purpose: Ensure end-to-end thinking configuration flow works
+        """
+        print("Setting up mocks...")
+        monkeypatch.setattr("kiro.converters_core.FAKE_REASONING_ENABLED", True)
+        monkeypatch.setattr("kiro.converters_core.FAKE_REASONING_BUDGET_CAP", 10000)
+        
+        print("Creating request with reasoning_effort='medium', max_tokens=8000...")
+        request = ChatCompletionRequest(
+            model="claude-sonnet-4.5",
+            messages=[ChatMessage(role="user", content="Test message")],
+            max_tokens=8000,
+            reasoning_effort="medium"
+        )
+        
+        print("Calling build_kiro_payload...")
+        payload = build_kiro_payload(
+            request_data=request,
+            conversation_id="test-conv-123",
+            profile_arn="arn:aws:test"
+        )
+        
+        print("Extracting userInputMessage content...")
+        user_input = payload["conversationState"]["currentMessage"]["userInputMessage"]
+        content = user_input["content"]
+        
+        expected_budget = int(8000 * 0.50)  # medium = 50%
+        print(f"Checking for <max_thinking_length>{expected_budget}</max_thinking_length>...")
+        assert f"<max_thinking_length>{expected_budget}</max_thinking_length>" in content
+        assert "<thinking_mode>enabled</thinking_mode>" in content

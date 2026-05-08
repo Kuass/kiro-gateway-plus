@@ -25,7 +25,7 @@ providing validation and serialization.
 """
 
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field
 
@@ -164,13 +164,14 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: Optional[float] = None
     frequency_penalty: Optional[float] = None
     
+    # Reasoning (OpenAI reasoning models)
+    # Supports all official reasoning_effort levels from OpenAI API
+    reasoning_effort: Optional[Literal["none", "minimal", "low", "medium", "high", "xhigh"]] = None
+    
     # Tools (function calling)
     tools: Optional[List[Tool]] = None
     tool_choice: Optional[Union[str, Dict]] = None
     
-    # Structured output
-    response_format: Optional[Dict[str, Any]] = None
-
     # Compatibility fields (ignored)
     stream_options: Optional[Dict[str, Any]] = None
     logit_bias: Optional[Dict[str, float]] = None
@@ -210,13 +211,11 @@ class ChatCompletionUsage(BaseModel):
         completion_tokens: Number of tokens in response
         total_tokens: Total number of tokens
         credits_used: Credits used (Kiro-specific)
-        kiro_credits_used: Raw Kiro metering credits before local billing override
     """
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
     credits_used: Optional[float] = None
-    kiro_credits_used: Optional[float] = None
 
 
 class ChatCompletionResponse(BaseModel):

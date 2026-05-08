@@ -4,7 +4,7 @@
 
 **Gateway proxy para Kiro API (Amazon Q Developer / AWS CodeWhisperer)**
 
-[🇬🇧 English](../../README.md) • [🇷🇺 Русский](../ru/README.md) • [🇨🇳 中文](../zh/README.md) • [🇮🇩 Indonesia](../id/README.md) • [🇧🇷 Português](../pt/README.md) • [🇯🇵 日本語](../ja/README.md) • [🇰🇷 한국어](../ko/README.md)
+[🇬🇧 English](../../README.md) • [🇷🇺 Русский](../ru/README.md) • [🇨🇳 中文](../zh/README.md) • 🇪🇸 Español • [🇮🇩 Indonesia](../id/README.md) • [🇧🇷 Português](../pt/README.md) • [🇯🇵 日本語](../ja/README.md) • [🇰🇷 한국어](../ko/README.md)
 
 Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 
@@ -13,7 +13,7 @@ Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![Sponsor](https://img.shields.io/badge/💖_Sponsor-Apoya_el_Desarrollo-ff69b4)](#-apoya-el-proyecto)
 
-*Usa modelos Claude de Kiro con Claude Code, OpenCode, Codex app, Cursor, Cline, Roo Code, Kilo Code, Obsidian, OpenAI SDK, LangChain, Continue y otras herramientas compatibles con OpenAI o Anthropic*
+*Usa modelos Claude de Kiro con Claude Code, OpenCode, OpenClaw, Claw Code, Codex app, Cursor, Cline, Roo Code, Kilo Code, Obsidian, OpenAI SDK, LangChain, Continue y otras herramientas compatibles con OpenAI o Anthropic*
 
 [Modelos](#-modelos-soportados) • [Características](#-características) • [Inicio Rápido](#-inicio-rápido) • [Configuración](#%EF%B8%8F-configuración) • [💖 Apoyar](#-apoya-el-proyecto)
 
@@ -21,7 +21,7 @@ Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 
 ---
 
-## 🤖 Modelos Disponibles
+## 🤖 Modelos Disponibles (Lista Gratuita)
 
 > ⚠️ **Importante:** La disponibilidad de modelos depende de tu plan de Kiro (gratuito/pago). El gateway proporciona acceso a los modelos disponibles en tu IDE o CLI según tu suscripción. La lista a continuación muestra los modelos comúnmente disponibles en el **plan gratuito**.
 
@@ -35,7 +35,11 @@ Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 
 📦 **Claude 3.7 Sonnet** — Modelo heredado. Disponible para compatibilidad retroactiva.
 
+💤 **GLM-5** — Modelo MoE abierto (744B parámetros, 40B activos). Modelo avanzado para ingeniería de sistemas complejos y tareas agénticas de largo alcance.
+
 🐋 **DeepSeek-V3.2** — Modelo MoE abierto (685B parámetros, 37B activos). Rendimiento equilibrado para programación, razonamiento y tareas generales.
+
+🧩 **MiniMax M2.5** — Modelo MoE abierto (230B parámetros, 10B activos). Versión mejorada con capacidades ampliadas de razonamiento y manejo de tareas.
 
 🧩 **MiniMax M2.1** — Modelo MoE abierto (230B parámetros, 10B activos). Excelente para tareas complejas, planificación y flujos de trabajo multietapa.
 
@@ -51,9 +55,11 @@ Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 |----------------|-------------|
 | 🔌 **API compatible con OpenAI** | Funciona con cualquier herramienta compatible con OpenAI |
 | 🔌 **API compatible con Anthropic** | Endpoint nativo `/v1/messages` |
+| 🔀 **Soporte de Múltiples Cuentas** | Conmutación inteligente entre múltiples cuentas |
 | 🌐 **Soporte de VPN/Proxy** | Proxy HTTP/SOCKS5 para redes restringidas |
 | 🧠 **Pensamiento Extendido** | El razonamiento es exclusivo de nuestro proyecto |
 | 👁️ **Soporte de Visión** | Envía imágenes al modelo |
+| 🔍 **Búsqueda Web** | Busca información actualizada en internet |
 | 🛠️ **Llamada de Herramientas** | Soporta llamada de funciones |
 | 💬 **Historial completo de mensajes** | Pasa el contexto completo de la conversación |
 | 📡 **Streaming** | Soporte completo de streaming SSE |
@@ -104,6 +110,8 @@ El servidor estará disponible en `http://localhost:8000`
 ---
 
 ## ⚙️ Configuración
+
+> 💡 **Usuarios avanzados:** ¿Buscas soporte para múltiples cuentas? Consulta [Sistema de Cuentas](#-sistema-de-cuentas-avanzado) abajo.
 
 ### Opción 1: Archivo JSON de Credenciales (Kiro IDE / Enterprise)
 
@@ -253,6 +261,85 @@ Si necesitas extraer manualmente el refresh token (por ejemplo, para depuración
 - Busca solicitudes a: `prod.us-east-1.auth.desktop.kiro.dev/refreshToken`
 
 </details>
+
+---
+
+## 🔀 Sistema de Cuentas (Avanzado)
+
+El Sistema de Cuentas es una forma de gestionar múltiples cuentas de Kiro con conmutación automática por fallo. En el futuro, este sistema reemplazará el archivo `.env` para la configuración de credenciales, pero actualmente es opcional e indicado para quienes desean usar múltiples cuentas.
+
+### Por Qué lo Necesitas
+
+Si tienes múltiples cuentas de Kiro, el gateway puede cambiar automáticamente entre ellas cuando una cuenta no está disponible temporalmente.
+
+El sistema también funciona con una sola cuenta — simplemente sin conmutación.
+
+### Cómo Habilitarlo
+
+Añade a tu `.env`:
+
+```env
+ACCOUNT_SYSTEM=true
+```
+
+**Qué sucede:**
+- En el primer inicio, tus credenciales de `.env` se migran automáticamente a `credentials.json` (una sola vez)
+- Después, todos los parámetros de cuenta y región de `.env` se ignoran
+- La gestión de cuentas solo se realiza a través de `credentials.json`
+
+<details>
+<summary>📄 Ejemplos de Configuración</summary>
+
+**Una sola cuenta:**
+```json
+[
+  {
+    "type": "json",
+    "path": "~/.aws/sso/cache/kiro-auth-token.json"
+  }
+]
+```
+
+**Múltiples cuentas:**
+```json
+[
+  {
+    "type": "json",
+    "path": "~/.aws/sso/cache/kiro-auth-token.json"
+  },
+  {
+    "type": "sqlite",
+    "path": "~/.local/share/kiro-cli/data.sqlite3"
+  },
+  {
+    "type": "refresh_token",
+    "refresh_token": "eyJhbGc...",
+    "profile_arn": "arn:aws:codewhisperer:us-east-1:..."
+  }
+]
+```
+
+**Carpeta con archivos:**
+```json
+[
+  {
+    "type": "json",
+    "path": "C:\\MyAccs\\kiro67"
+  }
+]
+```
+
+El gateway escaneará todos los archivos en la carpeta y los añadirá como cuentas separadas.
+
+</details>
+
+### Cómo Funciona la Conmutación
+
+Cuando una cuenta devuelve un error (límite de velocidad 429, cuota superada 402), el gateway intenta automáticamente la siguiente cuenta de la lista. Si una cuenta falla varias veces seguidas, el gateway deja de usarla temporalmente y verifica periódicamente si se ha recuperado.
+
+Para una sola cuenta, la conmutación no funciona — recibirás el error original de la API de Kiro.
+
+Para ejemplos de configuración completos (incluyendo parámetros de región por cuenta), consulta [`credentials.json.example`](../../credentials.json.example).
 
 ---
 
@@ -717,7 +804,7 @@ Cada contribución ayuda a mantener este proyecto vivo y creciendo
 
 ### 🤑 Donar
 
-[**☕ Donación Única**](https://app.lava.top/jwadow?tabId=donate) &nbsp;•&nbsp; [**💎 Apoyo Mensual**](https://app.lava.top/jwadow?tabId=subscriptions)
+[**☕ Apoyo Único**](https://app.lava.top/products/b4e34d12-3b6b-49b7-be50-50b6a20ed262/f3ea941f-de73-4ad1-bbb6-f82042ef8132)
 
 <br>
 

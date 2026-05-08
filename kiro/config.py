@@ -24,11 +24,10 @@ Centralized storage for all settings, constants, and mappings.
 Loads environment variables and provides typed access to them.
 """
 
-import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -77,50 +76,6 @@ def _get_raw_env_value(var_name: str, env_file: str = ".env") -> Optional[str]:
     
     return None
 
-
-def _parse_bool_env(var_name: str, default: bool) -> bool:
-    """
-    Parse boolean environment variable with safe fallback.
-
-    Args:
-        var_name: Environment variable name
-        default: Default value when var is missing or invalid
-
-    Returns:
-        Parsed boolean value
-    """
-    raw_value = os.getenv(var_name)
-    if raw_value is None:
-        return default
-
-    normalized = raw_value.strip().lower()
-    if normalized in ("1", "true", "yes", "on"):
-        return True
-    if normalized in ("0", "false", "no", "off"):
-        return False
-    return default
-
-
-def _parse_int_env(var_name: str, default: int) -> int:
-    """
-    Parse integer environment variable with safe fallback.
-
-    Args:
-        var_name: Environment variable name
-        default: Default value when var is missing or invalid
-
-    Returns:
-        Parsed integer value
-    """
-    raw_value = os.getenv(var_name)
-    if raw_value is None:
-        return default
-
-    try:
-        return int(raw_value)
-    except ValueError:
-        return default
-
 # ==================================================================================================
 # Server Settings
 # ==================================================================================================
@@ -142,119 +97,6 @@ SERVER_PORT: int = int(os.getenv("SERVER_PORT", str(DEFAULT_SERVER_PORT)))
 
 # API key for proxy access (clients must pass it in Authorization header)
 PROXY_API_KEY: str = os.getenv("PROXY_API_KEY", "my-super-secret-password-123")
-
-# Source of API key validation:
-# - env: legacy single shared key from PROXY_API_KEY
-# - mongodb: per-user key from MongoDB users collection
-_API_KEY_SOURCE_RAW = os.getenv("API_KEY_SOURCE", "env").strip().lower()
-API_KEY_SOURCE: str = _API_KEY_SOURCE_RAW if _API_KEY_SOURCE_RAW in ("env", "mongodb") else "env"
-
-# MongoDB settings for API key lookup and billing
-MONGODB_URI: str = os.getenv("MONGODB_URI", "")
-MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "fproxy")
-MONGODB_AUTH_KV_COLLECTION: str = os.getenv("MONGODB_AUTH_KV_COLLECTION", "auth_kv")
-MONGODB_USERS_COLLECTION: str = os.getenv("MONGODB_USERS_COLLECTION", "usersNew")
-MONGODB_CREDITS_COLLECTION: str = os.getenv("MONGODB_CREDITS_COLLECTION", "creditsNew")
-MONGODB_USER_API_KEY_FIELD: str = os.getenv("MONGODB_USER_API_KEY_FIELD", "apiKey")
-MONGODB_USER_ID_FIELD: str = os.getenv("MONGODB_USER_ID_FIELD", "_id")
-MONGODB_USER_ACTIVE_FIELD: str = os.getenv("MONGODB_USER_ACTIVE_FIELD", "isActive")
-MONGODB_CREDITS_USER_ID_FIELD: str = os.getenv("MONGODB_CREDITS_USER_ID_FIELD", "userId")
-MONGODB_CREDITS_BALANCE_FIELD: str = os.getenv("MONGODB_CREDITS_BALANCE_FIELD", "credits")
-
-# Billing settings
-BILLING_ENABLED: bool = _parse_bool_env("BILLING_ENABLED", False)
-BILLING_ENFORCE_SUFFICIENT_CREDITS: bool = _parse_bool_env("BILLING_ENFORCE_SUFFICIENT_CREDITS", True)
-BILLING_DECIMAL_PLACES: int = _parse_int_env("BILLING_DECIMAL_PLACES", 6)
-BILLING_MODEL_PRICES_JSON: str = os.getenv("BILLING_MODEL_PRICES_JSON", "[]")
-BILLING_UNKNOWN_MODEL_POLICY: str = os.getenv("BILLING_UNKNOWN_MODEL_POLICY", "default").strip().lower()
-if BILLING_UNKNOWN_MODEL_POLICY not in ("reject", "free", "default"):
-    BILLING_UNKNOWN_MODEL_POLICY = "default"
-
-
-def _parse_float_env(var_name: str, default: float) -> float:
-    """
-    Parse float environment variable with safe fallback.
-
-    Args:
-        var_name: Environment variable name
-        default: Default value when var is missing or invalid
-
-    Returns:
-        Parsed float value
-    """
-    raw_value = os.getenv(var_name)
-    if raw_value is None:
-        return default
-
-    try:
-        return float(raw_value)
-    except ValueError:
-        return default
-
-
-BILLING_DEFAULT_INPUT_PRICE_PER_MTOK: float = _parse_float_env("BILLING_DEFAULT_INPUT_PRICE_PER_MTOK", 3.0)
-BILLING_DEFAULT_OUTPUT_PRICE_PER_MTOK: float = _parse_float_env("BILLING_DEFAULT_OUTPUT_PRICE_PER_MTOK", 14.0)
-BILLING_DEFAULT_CACHE_WRITE_PRICE_PER_MTOK: float = _parse_float_env("BILLING_DEFAULT_CACHE_WRITE_PRICE_PER_MTOK", 3.75)
-BILLING_DEFAULT_CACHE_HIT_PRICE_PER_MTOK: float = _parse_float_env("BILLING_DEFAULT_CACHE_HIT_PRICE_PER_MTOK", 0.3)
-BILLING_DEFAULT_MULTIPLIER: float = _parse_float_env("BILLING_DEFAULT_MULTIPLIER", 1.1)
-
-
-def get_billing_model_prices() -> List[Dict[str, object]]:
-    """
-    Parse billing model pricing JSON from environment.
-
-    Returns:
-        List of model pricing dictionaries. Returns empty list on invalid JSON.
-    """
-    try:
-        parsed = json.loads(BILLING_MODEL_PRICES_JSON)
-    except json.JSONDecodeError:
-        return []
-
-    if isinstance(parsed, list):
-        return [item for item in parsed if isinstance(item, dict)]
-    return []
-
-
-# ==================================================================================================
-# Model Restriction Settings
-# ==================================================================================================
-
-# Optional strict model allowlist.
-# When enabled, requests for models outside this allowlist are rejected with HTTP 400,
-# and /v1/models only returns allowed models.
-MODEL_ALLOWLIST_ENABLED: bool = _parse_bool_env("MODEL_ALLOWLIST_ENABLED", False)
-
-# Accepted model IDs from clients (raw IDs allowed in addition to normalized forms).
-# Typical values for this deployment:
-# - claude-sonnet-4.5 / claude-sonnet-4-5-20250929
-# - claude-haiku-4.5 / claude-haiku-4-5-20251001
-MODEL_ALLOWED_IDS_JSON: str = os.getenv(
-    "MODEL_ALLOWED_IDS_JSON",
-    '["claude-sonnet-4.5","claude-haiku-4.5","claude-sonnet-4-5-20250929","claude-haiku-4-5-20251001"]',
-)
-
-
-def get_model_allowed_ids() -> Set[str]:
-    """
-    Parse allowed model IDs from environment.
-
-    Returns:
-        Lowercased set of allowed model IDs. Returns empty set on invalid config.
-    """
-    try:
-        parsed = json.loads(MODEL_ALLOWED_IDS_JSON)
-    except json.JSONDecodeError:
-        return set()
-
-    if not isinstance(parsed, list):
-        return set()
-
-    result: Set[str] = set()
-    for item in parsed:
-        if isinstance(item, str) and item.strip():
-            result.add(item.strip().lower())
-    return result
 
 # ==================================================================================================
 # VPN/Proxy Settings for Kiro API Access
@@ -288,14 +130,21 @@ REFRESH_TOKEN: str = os.getenv("REFRESH_TOKEN", "")
 # Profile ARN for AWS CodeWhisperer
 PROFILE_ARN: str = os.getenv("PROFILE_ARN", "")
 
-# AWS region (default us-east-1)
+# AWS SSO/auth region (default us-east-1)
+# This region is used for OIDC token refresh endpoint: https://oidc.{region}.amazonaws.com/token
+#
+# IMPORTANT: SSO region may differ from Q API region!
+# - SSO region: Where your AWS SSO/IAM Identity Center is configured
+# - API region: Where Q Developer API endpoints are available (q.{region}.amazonaws.com)
+#
+# The gateway automatically detects the correct API region from your credentials:
+# - SQLite (kiro-cli): Extracts from profile ARN in state table
+# - JSON (Kiro IDE): Uses region field from credentials file
+# - Environment variables: Falls back to this SSO region
+#
+# For manual override of API region, use KIRO_API_REGION environment variable.
+# See: https://github.com/jwadow/kiro-gateway/issues/132
 REGION: str = os.getenv("KIRO_REGION", "us-east-1")
-
-# API region for kiro-cli (AWS SSO OIDC) authentication
-# kiro-cli may use a different API region than the SSO region
-# Leave empty to use the same region as KIRO_REGION (default behavior)
-# Only set this if you experience 403 errors with kiro-cli credentials
-KIRO_CLI_API_REGION: str = os.getenv("KIRO_CLI_API_REGION", "")
 
 # Path to credentials file (optional, alternative to .env)
 # Read directly from .env to avoid escape sequence issues on Windows
@@ -310,20 +159,11 @@ KIRO_CREDS_FILE: str = str(Path(_raw_creds_file)) if _raw_creds_file else ""
 _raw_cli_db_file = _get_raw_env_value("KIRO_CLI_DB_FILE") or os.getenv("KIRO_CLI_DB_FILE", "")
 KIRO_CLI_DB_FILE: str = str(Path(_raw_cli_db_file)) if _raw_cli_db_file else ""
 
-# Source for Kiro upstream auth credentials:
-# - auto: preserve existing priority (sqlite -> file -> env)
-# - sqlite: force KIRO_CLI_DB_FILE
-# - file: force KIRO_CREDS_FILE
-# - env: force REFRESH_TOKEN/PROFILE_ARN
-# - mongodb: load from MongoDB auth_kv collection
-_KIRO_AUTH_SOURCE_RAW = os.getenv("KIRO_AUTH_SOURCE", "auto").strip().lower()
-KIRO_AUTH_SOURCE: str = _KIRO_AUTH_SOURCE_RAW if _KIRO_AUTH_SOURCE_RAW in (
-    "auto",
-    "sqlite",
-    "file",
-    "env",
-    "mongodb",
-) else "auto"
+# Disable SQLite write-back (read-only mode)
+# When enabled, gateway will only read from kiro-cli database without modifying it.
+# Useful when kiro-cli is actively managing tokens and you don't want gateway to interfere.
+# Default: false (write-back enabled)
+SQLITE_READONLY: bool = os.getenv("SQLITE_READONLY", "false").lower() in ("true", "1", "yes")
 
 # ==================================================================================================
 # Kiro API URL Templates
@@ -443,7 +283,6 @@ FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "claude-haiku-4.5"},
     {"modelId": "claude-sonnet-4.5"},
     {"modelId": "claude-opus-4.5"},
-    {"modelId": "claude-opus-4.6"},
 ]
 
 # ==================================================================================================
@@ -590,11 +429,25 @@ _FAKE_REASONING_RAW: str = os.getenv("FAKE_REASONING", "").lower()
 # Default is True - if env var is not set or empty, enable fake reasoning
 FAKE_REASONING_ENABLED: bool = _FAKE_REASONING_RAW not in ("false", "0", "no", "disabled", "off")
 
-# Maximum thinking length in tokens.
+# Maximum thinking length in tokens (default budget when client doesn't specify).
 # This value is injected into the request as <max_thinking_length>{value}</max_thinking_length>
 # Higher values allow for more detailed reasoning but increase response time and token usage.
 # Default: 4000 tokens
 FAKE_REASONING_MAX_TOKENS: int = int(os.getenv("FAKE_REASONING_MAX_TOKENS", "4000"))
+
+# Maximum budget cap for fake reasoning when client sends thinking budget.
+#
+# WHY CAP? Fake reasoning uses output tokens (not separate thinking tokens like native API).
+# Large budgets can cause the model to spend ALL output tokens on reasoning with NOTHING
+# left for actual content. This cap prevents that.
+#
+# Default: 10000 tokens (2.5x default budget of 4000)
+# - Allows deeper reasoning than default
+# - Prevents excessive token consumption
+# - Still leaves room for actual response
+#
+# Set to 0 to disable capping (not recommended for production).
+FAKE_REASONING_BUDGET_CAP: int = int(os.getenv("FAKE_REASONING_BUDGET_CAP", "10000"))
 
 # How to handle the thinking block in responses:
 # - "as_reasoning_content": Extract to reasoning_content field (OpenAI-compatible, recommended)
@@ -622,10 +475,83 @@ FAKE_REASONING_INITIAL_BUFFER_SIZE: int = int(os.getenv("FAKE_REASONING_INITIAL_
 
 
 # ==================================================================================================
+# Payload Size Guard Settings
+# ==================================================================================================
+
+# Payload size limit in bytes (Kiro API rejects > ~615KB with cryptic 400 error)
+# Default 600KB provides safety margin below the ~615KB hard limit
+KIRO_MAX_PAYLOAD_BYTES: int = int(os.getenv("KIRO_MAX_PAYLOAD_BYTES", "600000"))
+
+# Auto-trim payload when over limit (default: false - disabled)
+# Enable this if you use many tools (30+) and hit "Improperly formed request" errors
+# When false, returns a clear error instead of trimming
+AUTO_TRIM_PAYLOAD: bool = os.getenv("AUTO_TRIM_PAYLOAD", "false").lower() in ("true", "1", "yes")
+
+# ==================================================================================================
+# WebSearch Settings (MCP Tool Emulation)
+# ==================================================================================================
+
+# Enable web_search tool auto-injection (default: true)
+# When enabled, web_search is automatically added as a tool for MCP emulation (Path B)
+# Model decides whether to use it or not
+#
+# Note: Native Anthropic server-side tools (Path A) work ALWAYS, regardless of this setting
+WEB_SEARCH_ENABLED: bool = os.getenv("WEB_SEARCH_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# ==================================================================================================
+# Account System Settings
+# ==================================================================================================
+
+# Enable account system with failover (default: false)
+# When false: uses first account without failover (legacy mode)
+# When true: enables full failover loop with Circuit Breaker
+ACCOUNT_SYSTEM: bool = os.getenv("ACCOUNT_SYSTEM", "false").lower() in ("true", "1", "yes")
+
+# Path to credentials configuration file
+ACCOUNTS_CONFIG_FILE: str = os.getenv("ACCOUNTS_CONFIG_FILE", "credentials.json")
+
+# Path to runtime state file
+ACCOUNTS_STATE_FILE: str = os.getenv("ACCOUNTS_STATE_FILE", "state.json")
+
+# ==================================================================================================
+# Circuit Breaker Settings
+# ==================================================================================================
+
+# Base recovery timeout in seconds (for exponential backoff)
+# Actual timeout = BASE * 2^(failures - 1), capped at BASE * MAX_MULTIPLIER
+# Examples with BASE=60s, MAX=1440x:
+#   1 failure: 1m, 2: 2m, 3: 4m, 4: 8m, 5: 16m, 6: 32m, 7: 1h, 8: 2h, 9: 4h, 10: 8.5h, 11: 17h, 12+: 1d (cap)
+ACCOUNT_RECOVERY_TIMEOUT: int = int(os.getenv("ACCOUNT_RECOVERY_TIMEOUT", "60"))
+
+# Maximum backoff multiplier (cap for exponential backoff)
+# With BASE=60s and MAX=1440, maximum cooldown is 60 * 1440 = 86400s = 1 day
+ACCOUNT_MAX_BACKOFF_MULTIPLIER: float = float(os.getenv("ACCOUNT_MAX_BACKOFF_MULTIPLIER", "1440.0"))
+
+# Probabilistic retry chance for "broken" accounts (0.0 - 1.0)
+# Even if account is broken and timeout hasn't passed, try with this probability
+# Default: 0.1 (10% chance) - prevents permanent "stuck" state
+ACCOUNT_PROBABILISTIC_RETRY_CHANCE: float = float(os.getenv("ACCOUNT_PROBABILISTIC_RETRY_CHANCE", "0.1"))
+
+# ==================================================================================================
+# Account Cache Settings
+# ==================================================================================================
+
+# Model cache TTL in seconds (12 hours)
+# Cache is refreshed only when account is used (not in background)
+ACCOUNT_CACHE_TTL: int = int(os.getenv("ACCOUNT_CACHE_TTL", "43200"))
+
+# ==================================================================================================
+# State Persistence Settings
+# ==================================================================================================
+
+# Interval for periodic state.json saving in seconds
+STATE_SAVE_INTERVAL_SECONDS: int = int(os.getenv("STATE_SAVE_INTERVAL_SECONDS", "10"))
+
+# ==================================================================================================
 # Application Version
 # ==================================================================================================
 
-APP_VERSION: str = "2.3"
+APP_VERSION: str = "2.4-dev.10"
 APP_TITLE: str = "Kiro Gateway"
 APP_DESCRIPTION: str = "Proxy gateway for Kiro API (Amazon Q Developer / AWS CodeWhisperer). OpenAI and Anthropic compatible. Made by @jwadow"
 
@@ -648,3 +574,4 @@ def get_kiro_api_host(region: str) -> str:
 def get_kiro_q_host(region: str) -> str:
     """Return Q API host for the specified region."""
     return KIRO_Q_HOST_TEMPLATE.format(region=region)
+

@@ -4,7 +4,7 @@
 
 **Gateway proxy untuk Kiro API (Amazon Q Developer / AWS CodeWhisperer)**
 
-[🇬🇧 English](../../README.md) • [🇷🇺 Русский](../ru/README.md) • [🇨🇳 中文](../zh/README.md) • [🇪🇸 Español](../es/README.md) • [🇧🇷 Português](../pt/README.md) • [🇯🇵 日本語](../ja/README.md) • [🇰🇷 한국어](../ko/README.md)
+[🇬🇧 English](../../README.md) • [🇷🇺 Русский](../ru/README.md) • [🇨🇳 中文](../zh/README.md) • [🇪🇸 Español](../es/README.md) • 🇮🇩 Indonesia • [🇧🇷 Português](../pt/README.md) • [🇯🇵 日本語](../ja/README.md) • [🇰🇷 한국어](../ko/README.md)
 
 Dibuat dengan ❤️ oleh [@Jwadow](https://github.com/jwadow)
 
@@ -13,7 +13,7 @@ Dibuat dengan ❤️ oleh [@Jwadow](https://github.com/jwadow)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![Sponsor](https://img.shields.io/badge/💖_Sponsor-Dukung_Pengembangan-ff69b4)](#-dukung-proyek)
 
-*Gunakan model Claude dari Kiro dengan Claude Code, OpenCode, Codex app, Cursor, Cline, Roo Code, Kilo Code, Obsidian, OpenAI SDK, LangChain, Continue dan alat lain yang kompatibel dengan OpenAI atau Anthropic*
+*Gunakan model Claude dari Kiro dengan Claude Code, OpenCode, OpenClaw, Claw Code, Codex app, Cursor, Cline, Roo Code, Kilo Code, Obsidian, OpenAI SDK, LangChain, Continue dan alat lain yang kompatibel dengan OpenAI atau Anthropic*
 
 [Model](#-model-yang-didukung) • [Fitur](#-fitur) • [Mulai Cepat](#-mulai-cepat) • [Konfigurasi](#%EF%B8%8F-konfigurasi) • [💖 Dukung](#-dukung-proyek)
 
@@ -21,7 +21,7 @@ Dibuat dengan ❤️ oleh [@Jwadow](https://github.com/jwadow)
 
 ---
 
-## 🤖 Model yang Tersedia
+## 🤖 Model yang Tersedia (Daftar Gratis)
 
 > ⚠️ **Penting:** Ketersediaan model bergantung pada paket Kiro Anda (gratis/berbayar). Gateway menyediakan akses ke model yang tersedia di IDE atau CLI Anda berdasarkan langganan Anda. Daftar di bawah menunjukkan model yang umumnya tersedia di **paket gratis**.
 
@@ -35,7 +35,11 @@ Dibuat dengan ❤️ oleh [@Jwadow](https://github.com/jwadow)
 
 📦 **Claude 3.7 Sonnet** — Model lama. Tersedia untuk kompatibilitas mundur.
 
+💤 **GLM-5** — Model MoE terbuka (744B parameter, 40B aktif). Model canggih untuk rekayasa sistem kompleks dan tugas agentik jangka panjang.
+
 🐋 **DeepSeek-V3.2** — Model MoE terbuka (685B parameter, 37B aktif). Performa seimbang untuk coding, penalaran, dan tugas umum.
+
+🧩 **MiniMax M2.5** — Model MoE terbuka (230B parameter, 10B aktif). Versi yang ditingkatkan dengan kemampuan penalaran dan penanganan tugas yang lebih baik.
 
 🧩 **MiniMax M2.1** — Model MoE terbuka (230B parameter, 10B aktif). Bagus untuk tugas kompleks, perencanaan, dan alur kerja multi-langkah.
 
@@ -51,9 +55,11 @@ Dibuat dengan ❤️ oleh [@Jwadow](https://github.com/jwadow)
 |-------|-----------|
 | 🔌 **API kompatibel OpenAI** | Bekerja dengan alat apa pun yang kompatibel dengan OpenAI |
 | 🔌 **API kompatibel Anthropic** | Endpoint native `/v1/messages` |
+| 🔀 **Dukungan Multi-Akun** | Perpindahan cerdas antar beberapa akun |
 | 🌐 **Dukungan VPN/Proxy** | Proxy HTTP/SOCKS5 untuk jaringan terbatas |
 | 🧠 **Pemikiran Diperluas** | Penalaran adalah eksklusif proyek kami |
 | 👁️ **Dukungan Visi** | Kirim gambar ke model |
+| 🔍 **Pencarian Web** | Cari informasi terkini di internet |
 | 🛠️ **Pemanggilan Alat** | Mendukung pemanggilan fungsi |
 | 💬 **Riwayat pesan lengkap** | Meneruskan konteks percakapan lengkap |
 | 📡 **Streaming** | Dukungan streaming SSE penuh |
@@ -104,6 +110,8 @@ Server akan tersedia di `http://localhost:8000`
 ---
 
 ## ⚙️ Konfigurasi
+
+> 💡 **Pengguna lanjutan:** Mencari dukungan multi-akun? Lihat [Sistem Akun](#-sistem-akun-lanjutan) di bawah.
 
 ### Opsi 1: File JSON Kredensial (Kiro IDE / Enterprise)
 
@@ -253,6 +261,85 @@ Jika Anda perlu mengekstrak refresh token secara manual (misalnya, untuk debuggi
 - Cari request ke: `prod.us-east-1.auth.desktop.kiro.dev/refreshToken`
 
 </details>
+
+---
+
+## 🔀 Sistem Akun (Lanjutan)
+
+Sistem Akun adalah cara untuk mengelola beberapa akun Kiro dengan perpindahan otomatis saat terjadi kegagalan. Di masa depan, sistem ini akan menggantikan file `.env` untuk konfigurasi kredensial, tetapi saat ini bersifat opsional dan ditujukan bagi mereka yang ingin menggunakan beberapa akun.
+
+### Mengapa Anda Membutuhkannya
+
+Jika Anda memiliki beberapa akun Kiro, gateway dapat secara otomatis beralih di antara mereka ketika satu akun tidak tersedia sementara.
+
+Sistem ini juga bekerja dengan satu akun — hanya tanpa perpindahan.
+
+### Cara Mengaktifkannya
+
+Tambahkan ke `.env` Anda:
+
+```env
+ACCOUNT_SYSTEM=true
+```
+
+**Yang terjadi:**
+- Pada startup pertama, kredensial Anda dari `.env` secara otomatis dimigrasikan ke `credentials.json` (hanya sekali)
+- Setelah itu, semua pengaturan akun dan region dari `.env` diabaikan
+- Manajemen akun hanya melalui `credentials.json`
+
+<details>
+<summary>📄 Contoh Konfigurasi</summary>
+
+**Satu akun:**
+```json
+[
+  {
+    "type": "json",
+    "path": "~/.aws/sso/cache/kiro-auth-token.json"
+  }
+]
+```
+
+**Beberapa akun:**
+```json
+[
+  {
+    "type": "json",
+    "path": "~/.aws/sso/cache/kiro-auth-token.json"
+  },
+  {
+    "type": "sqlite",
+    "path": "~/.local/share/kiro-cli/data.sqlite3"
+  },
+  {
+    "type": "refresh_token",
+    "refresh_token": "eyJhbGc...",
+    "profile_arn": "arn:aws:codewhisperer:us-east-1:..."
+  }
+]
+```
+
+**Folder dengan file:**
+```json
+[
+  {
+    "type": "json",
+    "path": "C:\\MyAccs\\kiro67"
+  }
+]
+```
+
+Gateway akan memindai semua file di folder dan menambahkannya sebagai akun terpisah.
+
+</details>
+
+### Cara Kerja Perpindahan
+
+Ketika satu akun mengembalikan error (batas kecepatan 429, kuota terlampaui 402), gateway secara otomatis mencoba akun berikutnya dari daftar. Jika satu akun gagal beberapa kali berturut-turut, gateway berhenti menggunakannya sementara dan secara berkala memeriksa apakah telah pulih.
+
+Untuk satu akun, perpindahan tidak berfungsi — Anda akan menerima error asli dari Kiro API.
+
+Untuk contoh konfigurasi lengkap (termasuk pengaturan region per akun), lihat [`credentials.json.example`](../../credentials.json.example).
 
 ---
 
@@ -717,7 +804,7 @@ Setiap kontribusi membantu menjaga proyek ini tetap hidup dan berkembang
 
 ### 🤑 Donasi
 
-[**☕ Donasi Sekali**](https://app.lava.top/jwadow?tabId=donate) &nbsp;•&nbsp; [**💎 Dukungan Bulanan**](https://app.lava.top/jwadow?tabId=subscriptions)
+[**☕ Dukungan Sekali**](https://app.lava.top/products/b4e34d12-3b6b-49b7-be50-50b6a20ed262/f3ea941f-de73-4ad1-bbb6-f82042ef8132)
 
 <br>
 

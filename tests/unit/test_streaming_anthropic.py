@@ -360,6 +360,7 @@ class TestStreamKiroToAnthropic:
         
         async def mock_parse_kiro_stream(*args, **kwargs):
             yield KiroEvent(type="content", content="Hello")
+            yield KiroEvent(type="context_usage", context_usage_percentage=5.0)
         
         print("Action: Streaming to Anthropic format...")
         events = []
@@ -622,7 +623,7 @@ class TestCollectAnthropicResponse:
             thinking_content="",
             tool_calls=[],
             usage=None,
-            context_usage_percentage=None
+            context_usage_percentage=5.0
         )
         
         print("Action: Collecting Anthropic response...")
@@ -682,11 +683,12 @@ class TestCollectAnthropicResponse:
         print("Action: Collecting Anthropic response...")
         
         with patch('kiro.streaming_anthropic.collect_stream_to_result', return_value=mock_result):
-            with patch('kiro.streaming_anthropic.count_tokens', return_value=5):
-                result = await collect_anthropic_response(
-                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
-                    prompt_tokens=10
-                )
+            with patch('kiro.streaming_anthropic.estimate_request_tokens', return_value={"total_tokens": 10}):
+                with patch('kiro.streaming_anthropic.count_tokens', return_value=5):
+                    result = await collect_anthropic_response(
+                        mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
+                        request_messages=[{"role": "user", "content": "Hi"}]
+                    )
         
         print(f"Usage: {result['usage']}")
         assert "input_tokens" in result["usage"]
@@ -1081,32 +1083,124 @@ class TestStreamingAnthropicContextUsage:
         print("✓ Tokens calculated from context usage")
     
     @pytest.mark.asyncio
-    async def test_uses_prompt_tokens_for_input_tokens(self, mock_response, mock_model_cache, mock_auth_manager):
+    async def test_uses_request_messages_for_input_tokens(self, mock_response, mock_model_cache, mock_auth_manager):
         """
-        What it does: Uses pre-counted prompt_tokens for input token count.
-        Goal: Verify input tokens are passed through from prompt_tokens param.
+        What it does: Uses request messages for input token count.
+        Goal: Verify input tokens are counted from request.
+        """
+        print("Setup: Mock stream...")
+        
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Hello")
+        
+        request_messages = [
+            {"role": "user", "content": "Hi there!"}
+        ]
+        
+        print("Action: Streaming to Anthropic format with request messages...")
+        events = []
+        
+        with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
+                with patch('kiro.streaming_anthropic.estimate_request_tokens', return_value={"total_tokens": 10}) as mock_estimate:
+                    async for event in stream_kiro_to_anthropic(
+                        mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
+                        request_messages=request_messages
+                    ):
+                        events.append(event)
+                    
+                    # Verify estimate_request_tokens was called
+                    mock_estimate.assert_called_once_with(
+                        messages=request_messages,
+                        tools=None,
+                        system_prompt=None,
+                        apply_claude_correction=False
+                    )
+        
+        print("✓ Request messages used for input token count")
+
+    @pytest.mark.asyncio
+    async def test_uses_tools_and_system_for_input_tokens(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Includes request tools and system in input token estimation.
+        Goal: Verify Anthropic fallback token counting uses full request.
         """
         print("Setup: Mock stream...")
 
         async def mock_parse_kiro_stream(*args, **kwargs):
             yield KiroEvent(type="content", content="Hello")
 
-        print("Action: Streaming to Anthropic format with prompt_tokens...")
-        events = []
+        request_messages = [{"role": "user", "content": "Hi"}]
+        request_tools = [{"name": "get_weather", "input_schema": {"type": "object"}}]
+        request_system = [{"type": "text", "text": "你是助手"}]
 
         with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
             with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
-                async for event in stream_kiro_to_anthropic(
-                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
-                    prompt_tokens=42
-                ):
-                    events.append(event)
+                with patch('kiro.streaming_anthropic.estimate_request_tokens', return_value={"total_tokens": 12}) as mock_estimate:
+                    events = []
+                    async for event in stream_kiro_to_anthropic(
+                        mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
+                        request_messages=request_messages,
+                        request_tools=request_tools,
+                        request_system=request_system,
+                    ):
+                        events.append(event)
 
-        # Check message_start has the prompt_tokens as input_tokens
-        message_start = json.loads(events[0].split("data: ")[1])
-        assert message_start["message"]["usage"]["input_tokens"] == 42
+                    assert events, "Should produce streaming events"
+                    mock_estimate.assert_called_once_with(
+                        messages=request_messages,
+                        tools=request_tools,
+                        system_prompt=request_system,
+                        apply_claude_correction=False
+                    )
+        print("✓ Request tools and system included in token count")
 
-        print("✓ prompt_tokens used for input token count")
+    @pytest.mark.asyncio
+    async def test_context_usage_zero_keeps_fallback_estimate(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Keeps fallback estimate when context usage is 0.
+        Goal: Prevent overriding with zero prompt tokens.
+        """
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Hello")
+            yield KiroEvent(type="context_usage", context_usage_percentage=0.0)
+
+        events = []
+        with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
+                with patch('kiro.streaming_anthropic.estimate_request_tokens', return_value={"total_tokens": 99}):
+                    async for event in stream_kiro_to_anthropic(
+                        mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager,
+                        request_messages=[{"role": "user", "content": "hi"}]
+                    ):
+                        events.append(event)
+
+        message_start_event = next(e for e in events if "event: message_start" in e)
+        assert '"input_tokens": 99' in message_start_event
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_passes_upstream_cache_usage_fields(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Passes through upstream cache usage fields when available.
+        Goal: Ensure no fake values, only real upstream usage keys.
+        """
+        mock_result = MagicMock(
+            content="done",
+            thinking_content="",
+            tool_calls=[],
+            context_usage_percentage=None,
+            usage={"cacheReadInputTokens": 12, "cacheCreationInputTokens": 34},
+        )
+
+        with patch('kiro.streaming_anthropic.collect_stream_to_result', return_value=mock_result):
+            with patch('kiro.streaming_anthropic.generate_message_id', return_value="msg_test"):
+                response_data = await collect_anthropic_response(
+                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+                )
+
+        usage = response_data["usage"]
+        assert usage["cache_read_input_tokens"] == 12
+        assert usage["cache_creation_input_tokens"] == 34
 
 
 # ==================================================================================================
@@ -1357,42 +1451,44 @@ class TestStreamWithFirstTokenRetryAnthropic:
         print("✓ Anthropic-formatted error raised on HTTP error")
     
     @pytest.mark.asyncio
-    async def test_passes_prompt_tokens_to_stream(self, mock_model_cache, mock_auth_manager):
+    async def test_passes_request_messages_to_stream(self, mock_model_cache, mock_auth_manager):
         """
-        What it does: Passes prompt_tokens to underlying stream function.
+        What it does: Passes request_messages to underlying stream function.
         Goal: Verify token counting parameters are forwarded.
         """
-        print("Setup: Mock request with prompt_tokens...")
-
+        print("Setup: Mock request with messages...")
+        
         mock_response = AsyncMock()
         mock_response.status_code = 200
         mock_response.aclose = AsyncMock()
-
+        
         async def mock_make_request():
             return mock_response
-
+        
         captured_kwargs = {}
-
+        
         async def mock_stream_kiro_to_anthropic(*args, **kwargs):
             captured_kwargs.update(kwargs)
             yield "event: message_start\ndata: {}\n\n"
             yield "event: message_stop\ndata: {}\n\n"
-
-        print("Action: Streaming with prompt_tokens...")
-
+        
+        request_messages = [{"role": "user", "content": "Hello"}]
+        
+        print("Action: Streaming with request_messages...")
+        
         with patch('kiro.streaming_anthropic.stream_kiro_to_anthropic', mock_stream_kiro_to_anthropic):
             async for chunk in stream_with_first_token_retry_anthropic(
                 make_request=mock_make_request,
                 model="claude-sonnet-4",
                 model_cache=mock_model_cache,
                 auth_manager=mock_auth_manager,
-                prompt_tokens=42
+                request_messages=request_messages
             ):
                 pass
-
+        
         print(f"Captured kwargs: {captured_kwargs}")
-        assert captured_kwargs.get("prompt_tokens") == 42
-        print("✓ prompt_tokens passed to stream function")
+        assert captured_kwargs.get("request_messages") == request_messages
+        print("✓ request_messages passed to stream function")
     
     @pytest.mark.asyncio
     async def test_uses_configured_max_retries(self, mock_model_cache, mock_auth_manager):
@@ -1437,3 +1533,137 @@ class TestStreamWithFirstTokenRetryAnthropic:
         print(f"Call count: {call_count}")
         assert call_count == 5  # Should try exactly 5 times
         print("✓ max_retries parameter respected")
+
+
+# ==================================================================================================
+# Tests for truncation detection
+# ==================================================================================================
+
+class TestStreamingAnthropicTruncationDetection:
+    """Tests for truncation detection in Anthropic streaming."""
+    
+    @pytest.mark.asyncio
+    async def test_stop_reason_is_max_tokens_when_truncated(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Sets stop_reason to max_tokens when content is truncated.
+        Goal: Verify truncation detection without completion signals.
+        """
+        print("Setup: Mock stream without completion signals (truncated)...")
+        
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="This response was cut off mid-sentence because")
+            # No context_usage event = truncation
+        
+        print("Action: Streaming to Anthropic format...")
+        events = []
+        
+        with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
+                async for event in stream_kiro_to_anthropic(
+                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+                ):
+                    events.append(event)
+        
+        print(f"Received {len(events)} events")
+        
+        # Should have message_delta with stop_reason: max_tokens
+        message_delta_events = [e for e in events if "message_delta" in e]
+        assert len(message_delta_events) >= 1
+        print(f"Comparing stop_reason: Expected 'max_tokens', Got event: {message_delta_events[0]}")
+        assert "max_tokens" in message_delta_events[0]
+        print("✓ stop_reason is max_tokens when truncated")
+    
+    @pytest.mark.asyncio
+    async def test_stop_reason_is_tool_use_even_without_completion_signals(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Sets stop_reason to tool_use when tool use present.
+        Goal: Verify tool_use takes priority (not confused with content truncation).
+        """
+        print("Setup: Mock stream with tool use but no completion signals...")
+        
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Let me call a tool")
+            yield KiroEvent(type="tool_use", tool_use={
+                "id": "toolu_1",
+                "function": {"name": "get_weather", "arguments": "{}"}
+            })
+            # No context_usage event, but tool use present = tool_use stop_reason
+        
+        print("Action: Streaming to Anthropic format...")
+        events = []
+        
+        with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
+                async for event in stream_kiro_to_anthropic(
+                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+                ):
+                    events.append(event)
+        
+        print(f"Received {len(events)} events")
+        
+        # Tool use takes priority (not confused with content truncation)
+        message_delta_events = [e for e in events if "message_delta" in e]
+        assert len(message_delta_events) >= 1
+        print(f"Comparing stop_reason: Expected 'tool_use', Got event: {message_delta_events[0]}")
+        assert "tool_use" in message_delta_events[0]
+        print("✓ stop_reason is tool_use (not confused with content truncation)")
+    
+    @pytest.mark.asyncio
+    async def test_stop_reason_is_end_turn_with_completion_signals(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Sets stop_reason to end_turn when completion signals present.
+        Goal: Verify normal completion is detected correctly.
+        """
+        print("Setup: Mock stream with completion signals (not truncated)...")
+        
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Complete response")
+            yield KiroEvent(type="context_usage", context_usage_percentage=5.0)
+        
+        print("Action: Streaming to Anthropic format...")
+        events = []
+        
+        with patch('kiro.streaming_anthropic.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_anthropic.parse_bracket_tool_calls', return_value=[]):
+                async for event in stream_kiro_to_anthropic(
+                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+                ):
+                    events.append(event)
+        
+        print(f"Received {len(events)} events")
+        
+        # With completion signals, should be end_turn
+        message_delta_events = [e for e in events if "message_delta" in e]
+        assert len(message_delta_events) >= 1
+        print(f"Comparing stop_reason: Expected 'end_turn', Got event: {message_delta_events[0]}")
+        assert "end_turn" in message_delta_events[0]
+        print("✓ stop_reason is end_turn with completion signals")
+    
+    @pytest.mark.asyncio
+    async def test_collect_detects_truncation_in_non_streaming(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Non-streaming detects truncation correctly.
+        Goal: Verify collect_anthropic_response detects truncation.
+        """
+        print("Setup: Mock stream result without completion signals...")
+        
+        mock_result = StreamResult(
+            content="Truncated response",
+            thinking_content="",
+            tool_calls=[],
+            usage=None,
+            context_usage_percentage=None  # No completion signal = truncation
+        )
+        
+        print("Action: Collecting Anthropic response...")
+        
+        with patch('kiro.streaming_anthropic.collect_stream_to_result', return_value=mock_result):
+            result = await collect_anthropic_response(
+                mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+            )
+        
+        print(f"stop_reason: {result['stop_reason']}")
+        
+        # Should detect truncation and set max_tokens
+        assert result["stop_reason"] == "max_tokens"
+        print("✓ collect_anthropic_response detects truncation correctly")
