@@ -358,7 +358,7 @@ docker run -d \
   -p 8000:8000 \
   -e PROXY_API_KEY="my-super-secret-password-123" \
   -e REFRESH_TOKEN="your_refresh_token" \
-  --name kiro-gateway \
+  --name kiro-gateway-plus \
   ghcr.io/jwadow/kiro-gateway:latest
 ```
 
@@ -374,7 +374,7 @@ docker run -d \
   -v ~/.aws/sso/cache:/home/kiro/.aws/sso/cache:ro \
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json \
   -e PROXY_API_KEY="my-super-secret-password-123" \
-  --name kiro-gateway \
+  --name kiro-gateway-plus \
   ghcr.io/jwadow/kiro-gateway:latest
 ```
 
@@ -385,7 +385,7 @@ docker run -d `
   -v ${HOME}/.aws/sso/cache:/home/kiro/.aws/sso/cache:ro `
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json `
   -e PROXY_API_KEY="my-super-secret-password-123" `
-  --name kiro-gateway `
+  --name kiro-gateway-plus `
   ghcr.io/jwadow/kiro-gateway:latest
 ```
 
@@ -395,7 +395,7 @@ docker run -d `
 <summary>🔹 Using .env File</summary>
 
 ```bash
-docker run -d -p 8000:8000 --env-file .env --name kiro-gateway ghcr.io/jwadow/kiro-gateway:latest
+docker run -d -p 8000:8000 --env-file .env --name kiro-gateway-plus ghcr.io/jwadow/kiro-gateway:latest
 ```
 
 </details>
@@ -431,8 +431,8 @@ docker-compose pull && docker-compose up -d  # Update
 <summary>🔧 Building from Source</summary>
 
 ```bash
-docker build -t kiro-gateway .
-docker run -d -p 8000:8000 --env-file .env kiro-gateway
+docker build -t kiro-gateway-plus .
+docker run -d -p 8000:8000 --env-file .env --name kiro-gateway-plus kiro-gateway-plus
 ```
 
 </details>

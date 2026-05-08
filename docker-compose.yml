@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  kiro-gateway:
+  kiro-gateway-plus:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: kiro-gateway
+    container_name: kiro-gateway-plus
     ports:
       - "8000:8000"
     environment:
@@ -77,4 +77,4 @@ services:
 
 networks:
   default:
-    name: kiro-gateway-network
+    name: kiro-gateway-plus-network
