@@ -75,6 +75,7 @@ async def stream_kiro_to_openai_internal(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
+    prompt_tokens: int = 0,
     first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
     request_messages: Optional[list] = None,
     request_tools: Optional[list] = None,
@@ -95,6 +96,7 @@ async def stream_kiro_to_openai_internal(
         model: Model name to include in response
         model_cache: Model cache for getting token limits
         auth_manager: Authentication manager
+        prompt_tokens: Pre-counted prompt tokens (from full Kiro payload)
         first_token_timeout: First token wait timeout (seconds)
         request_messages: Original request messages (for fallback token counting)
         request_tools: Original request tools (for fallback token counting)
@@ -314,13 +316,18 @@ async def stream_kiro_to_openai_internal(
         # Count prompt_tokens from original messages
         # IMPORTANT: Don't apply correction coefficient for prompt_tokens,
         # as it was calibrated for completion_tokens
-        if prompt_source == "unknown" and request_messages:
-            prompt_tokens = count_message_tokens(request_messages, apply_claude_correction=False)
-            if request_tools:
-                prompt_tokens += count_tools_tokens(request_tools, apply_claude_correction=False)
-            total_tokens = prompt_tokens + completion_tokens
-            prompt_source = "tiktoken"
-            total_source = "tiktoken"
+        if prompt_source == "unknown":
+            if prompt_tokens > 0:
+                total_tokens = prompt_tokens + completion_tokens
+                prompt_source = "payload_tiktoken"
+                total_source = "tiktoken"
+            elif request_messages:
+                prompt_tokens = count_message_tokens(request_messages, apply_claude_correction=False)
+                if request_tools:
+                    prompt_tokens += count_tools_tokens(request_tools, apply_claude_correction=False)
+                total_tokens = prompt_tokens + completion_tokens
+                prompt_source = "tiktoken"
+                total_source = "tiktoken"
         
         # Send tool calls if present
         if all_tool_calls:
@@ -453,7 +460,9 @@ async def stream_kiro_to_openai(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    request_messages: Optional[list] = None,
+    request_tools: Optional[list] = None
 ) -> AsyncGenerator[str, None]:
     """
     Generator for converting Kiro stream to OpenAI format.
@@ -468,13 +477,17 @@ async def stream_kiro_to_openai(
         model_cache: Model cache for getting token limits
         auth_manager: Authentication manager
         prompt_tokens: Pre-counted prompt tokens (from full Kiro payload)
+        request_messages: Original request messages (for fallback token counting)
+        request_tools: Original request tools (for fallback token counting)
 
     Yields:
         Strings in SSE format: "data: {...}\\n\\n" or "data: [DONE]\\n\\n"
     """
     async for chunk in stream_kiro_to_openai_internal(
         client, response, model, model_cache, auth_manager,
-        prompt_tokens=prompt_tokens
+        prompt_tokens=prompt_tokens,
+        request_messages=request_messages,
+        request_tools=request_tools
     ):
         yield chunk
 
@@ -488,7 +501,9 @@ async def stream_with_first_token_retry(
     initial_response: Optional[httpx.Response] = None,
     max_retries: int = FIRST_TOKEN_MAX_RETRIES,
     first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    request_messages: Optional[list] = None,
+    request_tools: Optional[list] = None
 ) -> AsyncGenerator[str, None]:
     """
     Streaming with automatic retry on first token timeout.
@@ -512,6 +527,8 @@ async def stream_with_first_token_retry(
         max_retries: Maximum number of attempts
         first_token_timeout: First token wait timeout (seconds)
         prompt_tokens: Pre-counted prompt tokens (from full Kiro payload)
+        request_messages: Original request messages (for fallback token counting)
+        request_tools: Original request tools (for fallback token counting)
 
     Yields:
         Strings in SSE format
@@ -550,6 +567,7 @@ async def stream_with_first_token_retry(
             model,
             model_cache,
             auth_manager,
+            prompt_tokens=prompt_tokens,
             first_token_timeout=first_token_timeout,
             request_messages=request_messages,
             request_tools=request_tools
@@ -574,7 +592,9 @@ async def collect_stream_response(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    request_messages: Optional[list] = None,
+    request_tools: Optional[list] = None
 ) -> dict:
     """
     Collect full response from streaming stream.
@@ -589,6 +609,8 @@ async def collect_stream_response(
         model_cache: Model cache
         auth_manager: Authentication manager
         prompt_tokens: Pre-counted prompt tokens (from full Kiro payload)
+        request_messages: Original request messages (for fallback token counting)
+        request_tools: Original request tools (for fallback token counting)
 
     Returns:
         Dictionary with full response in OpenAI chat.completion format
@@ -606,7 +628,9 @@ async def collect_stream_response(
         model,
         model_cache,
         auth_manager,
-        prompt_tokens=prompt_tokens
+        prompt_tokens=prompt_tokens,
+        request_messages=request_messages,
+        request_tools=request_tools
     ):
         if not chunk_str.startswith("data:"):
             continue

@@ -42,6 +42,7 @@ Priority: CLI args > Environment variables > Default values
 import argparse
 import asyncio
 import json
+import inspect
 import logging
 import sys
 import os
@@ -98,6 +99,20 @@ logger.add(
     colorize=True,
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 )
+
+
+async def _maybe_await(value):
+    """Return an awaitable result or a direct value.
+
+    Args:
+        value: Possibly awaitable value.
+
+    Returns:
+        Resolved value when awaitable, otherwise the original value.
+    """
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class InterceptHandler(logging.Handler):
@@ -508,13 +523,22 @@ async def lifespan(app: FastAPI):
     )
     
     logger.info("Account system initialized successfully")
+
+    # Keep legacy app.state aliases pointed at the first initialized account.
+    # Routes and tests still use these aliases in legacy-mode paths while the
+    # AccountManager owns the canonical account objects.
+    active_account = app.state.account_manager._accounts[account_id]
+    app.state.auth_manager = active_account.auth_manager
+    app.state.model_cache = active_account.model_cache
+    if app.state.auth_manager is None or app.state.model_cache is None:
+        raise RuntimeError("Initialized account is missing auth manager or model cache")
     
     # BLOCKING: Load models from Kiro API at startup
     # This ensures the cache is populated BEFORE accepting any requests.
     # No race conditions - requests only start after yield.
     logger.info("Loading models from Kiro API...")
     try:
-        token = await app.state.auth_manager.get_access_token()
+        token = await _maybe_await(app.state.auth_manager.get_access_token())
         from kiro.utils import get_kiro_headers
         from kiro.auth import AuthType
         headers = get_kiro_headers(app.state.auth_manager, token)
@@ -536,7 +560,7 @@ async def lifespan(app: FastAPI):
         if response.status_code == 200:
             data = response.json()
             models_list = data.get("models", [])
-            await app.state.model_cache.update(models_list)
+            await _maybe_await(app.state.model_cache.update(models_list))
             logger.debug(f"Successfully loaded {len(models_list)} models from Kiro API")
         else:
             raise Exception(f"HTTP {response.status_code}")
@@ -546,7 +570,7 @@ async def lifespan(app: FastAPI):
         logger.error("Using pre-configured fallback models. Not all models may be available on your plan, or the list may be outdated.")
         
         # Populate cache with fallback models
-        await app.state.model_cache.update(FALLBACK_MODELS)
+        await _maybe_await(app.state.model_cache.update(FALLBACK_MODELS))
         logger.debug(f"Loaded {len(FALLBACK_MODELS)} fallback models")
     
     # Add hidden models to cache (they appear in /v1/models but not in Kiro API)
