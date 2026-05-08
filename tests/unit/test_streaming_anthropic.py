@@ -694,6 +694,41 @@ class TestCollectAnthropicResponse:
         assert "input_tokens" in result["usage"]
         assert "output_tokens" in result["usage"]
         print("✓ Usage info included")
+
+    @pytest.mark.asyncio
+    async def test_counts_tool_use_content_in_output_tokens(self, mock_response, mock_model_cache, mock_auth_manager):
+        """
+        What it does: Counts Anthropic tool_use name and input as assistant output tokens.
+        Goal: Prevent under-reporting output tokens for tool-only responses.
+        """
+        print("Setup: Mock stream result with a tool-only response...")
+
+        mock_result = StreamResult(
+            content="",
+            thinking_content="",
+            tool_calls=[{
+                "id": "call_1",
+                "function": {"name": "get_weather", "arguments": '{"city":"Seoul"}'},
+            }],
+            usage=None,
+            context_usage_percentage=None
+        )
+        token_count_input = []
+
+        def count_characters(text):
+            token_count_input.append(text)
+            return len(text)
+
+        with patch('kiro.streaming_anthropic.collect_stream_to_result', return_value=mock_result):
+            with patch('kiro.streaming_anthropic.count_tokens', side_effect=count_characters):
+                result = await collect_anthropic_response(
+                    mock_response, "claude-sonnet-4", mock_model_cache, mock_auth_manager
+                )
+
+        expected_tool_content = 'get_weather{"city":"Seoul"}'
+        assert expected_tool_content in token_count_input
+        assert result["usage"]["output_tokens"] == len(expected_tool_content)
+        print("✓ Tool use content counted in output tokens")
     
     @pytest.mark.asyncio
     async def test_generates_message_id(self, mock_response, mock_model_cache, mock_auth_manager):

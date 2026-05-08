@@ -987,6 +987,42 @@ class TestCollectStreamResponse:
         assert "completion_tokens" in result["usage"]
         assert "total_tokens" in result["usage"]
         print("✓ Usage included in response")
+
+    @pytest.mark.asyncio
+    async def test_counts_tool_call_content_in_completion_tokens(
+        self, mock_http_client, mock_response, mock_model_cache, mock_auth_manager
+    ):
+        """
+        What it does: Counts tool call name and arguments as assistant output tokens.
+        Goal: Prevent under-reporting completion tokens for tool-only responses.
+        """
+        print("Setup: Mock stream with a tool-only response...")
+
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="tool_use", tool_use={
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": '{"city":"Seoul"}'},
+            })
+
+        token_count_input = []
+
+        def count_characters(text):
+            token_count_input.append(text)
+            return len(text)
+
+        with patch('kiro.streaming_openai.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_openai.parse_bracket_tool_calls', return_value=[]):
+                with patch('kiro.streaming_openai.count_tokens', side_effect=count_characters):
+                    result = await collect_stream_response(
+                        mock_http_client, mock_response, "claude-sonnet-4",
+                        mock_model_cache, mock_auth_manager
+                    )
+
+        expected_tool_content = 'get_weather{"city":"Seoul"}'
+        assert expected_tool_content in token_count_input
+        assert result["usage"]["completion_tokens"] == len(expected_tool_content)
+        print("✓ Tool call content counted in completion tokens")
     
     @pytest.mark.asyncio
     async def test_sets_finish_reason_tool_calls(self, mock_http_client, mock_response, mock_model_cache, mock_auth_manager):
