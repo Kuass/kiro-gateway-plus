@@ -2,7 +2,7 @@ const { MongoClient } = require('mongodb');
 require('dotenv').config({ path: '../.env' });
 
 async function checkBindings() {
-  const client = new MongoClient(process.env.MONGODB_URI || 'mongodb+srv://trantai306_db_user:FHBuXtedXaFLBr22@cluster0.aa02bn1.mongodb.net/?appName=Cluster0');
+  const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:27017/fproxy');
 
   try {
     await client.connect();

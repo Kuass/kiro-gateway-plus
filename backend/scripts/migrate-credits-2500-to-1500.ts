@@ -24,7 +24,7 @@
 import mongoose from 'mongoose';
 
 // MongoDB connection - use environment variable or default
-const uri = process.env.MONGODB_URI || 'mongodb+srv://trantai306_db_user:FHBuXtedXaFLBr22@cluster0.aa02bn1.mongodb.net/fproxy?appName=Cluster0';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fproxy';
 
 // Migration constants
 const OLD_RATE = 2500;  // Old rate: 2500 VND = $1 USD

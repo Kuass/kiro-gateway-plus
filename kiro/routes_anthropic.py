@@ -539,6 +539,26 @@ async def messages(
                 system_for_tokenizer = [b.model_dump() if hasattr(b, "model_dump") else b for b in request_data.system]
             else:
                 system_for_tokenizer = request_data.system
+
+            prompt_tokens = estimate_request_tokens(
+                messages=messages_for_tokenizer,
+                tools=tools_for_tokenizer,
+                system_prompt=system_for_tokenizer,
+                apply_claude_correction=False,
+            )["total_tokens"]
+
+            if BILLING_ENABLED and billing_user_id is not None:
+                try:
+                    required_credits = calculate_preflight_charge(
+                        model_id=request_data.model,
+                        prompt_tokens=prompt_tokens,
+                        tool_tokens=0,
+                    )
+                    ensure_user_has_sufficient_credits(billing_user_id, required_credits)
+                except UnknownModelPricingError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                except InsufficientCreditsError as exc:
+                    raise HTTPException(status_code=402, detail=str(exc))
             
             try:
                 # Make request to Kiro API
@@ -558,6 +578,7 @@ async def messages(
                         async def stream_wrapper():
                             streaming_error = None
                             client_disconnected = False
+                            deduction_applied = False
                             try:
                                 async def make_retry_request():
                                     return await http_client.request_with_retry(
@@ -574,6 +595,53 @@ async def messages(
                                     request_tools=tools_for_tokenizer,
                                     request_system=system_for_tokenizer,
                                 ):
+                                    if chunk.startswith("event: message_delta"):
+                                        lines = chunk.strip().splitlines()
+                                        if len(lines) >= 2 and lines[1].startswith("data: "):
+                                            payload = lines[1][len("data: "):]
+                                            try:
+                                                payload_data = json.loads(payload)
+                                            except json.JSONDecodeError:
+                                                payload_data = None
+
+                                            if isinstance(payload_data, dict):
+                                                usage_payload = payload_data.get("usage")
+                                                if isinstance(usage_payload, dict):
+                                                    usage_for_charge = {
+                                                        "input_tokens": prompt_tokens,
+                                                        "output_tokens": usage_payload.get("output_tokens", 0),
+                                                    }
+
+                                                    if BILLING_ENABLED and billing_user_id is not None and not deduction_applied:
+                                                        try:
+                                                            charged = deduct_credits_for_usage(
+                                                                billing_user_id,
+                                                                request_data.model,
+                                                                usage_for_charge,
+                                                            )
+                                                        except UnknownModelPricingError as exc:
+                                                            logger.error(f"Anthropic streaming billing failed (unknown model): {exc}")
+                                                            error_event = (
+                                                                f'event: error\n'
+                                                                f'data: {json.dumps({"type": "error", "error": {"type": "billing_error", "message": str(exc)}})}\n\n'
+                                                            )
+                                                            yield error_event
+                                                            return
+                                                        except InsufficientCreditsError as exc:
+                                                            logger.error(f"Anthropic streaming billing failed (insufficient credits): {exc}")
+                                                            error_event = (
+                                                                f'event: error\n'
+                                                                f'data: {json.dumps({"type": "error", "error": {"type": "billing_error", "message": str(exc)}})}\n\n'
+                                                            )
+                                                            yield error_event
+                                                            return
+
+                                                        if "credits_used" in usage_payload and "kiro_credits_used" not in usage_payload:
+                                                            usage_payload["kiro_credits_used"] = usage_payload["credits_used"]
+                                                        usage_payload["credits_used"] = float(charged)
+                                                        payload_data["usage"] = usage_payload
+                                                        chunk = f"event: message_delta\ndata: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
+                                                        deduction_applied = True
                                     yield chunk
                             except GeneratorExit:
                                 client_disconnected = True
@@ -622,6 +690,19 @@ async def messages(
                             request_tools=tools_for_tokenizer,
                             request_system=system_for_tokenizer,
                         )
+
+                        if BILLING_ENABLED and billing_user_id is not None:
+                            usage_payload = anthropic_response.get("usage") if isinstance(anthropic_response, dict) else None
+                            if isinstance(usage_payload, dict):
+                                try:
+                                    charged = deduct_credits_for_usage(billing_user_id, request_data.model, usage_payload)
+                                    if "credits_used" in usage_payload and "kiro_credits_used" not in usage_payload:
+                                        usage_payload["kiro_credits_used"] = usage_payload["credits_used"]
+                                    usage_payload["credits_used"] = float(charged)
+                                except UnknownModelPricingError as exc:
+                                    raise HTTPException(status_code=400, detail=str(exc))
+                                except InsufficientCreditsError as exc:
+                                    raise HTTPException(status_code=402, detail=str(exc))
                         
                         await http_client.close()
                         logger.info(f"HTTP 200 - POST /v1/messages (non-streaming) - completed")

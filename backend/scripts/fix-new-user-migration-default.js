@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 // MongoDB connection
-const uri = process.env.MONGODB_URI || 'mongodb+srv://trantai306_db_user:FHBuXtedXaFLBr22@cluster0.aa02bn1.mongodb.net/fproxy?appName=Cluster0';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fproxy';
 
 // Rate change announcement date
 const RATE_CHANGE_DATE = new Date('2026-01-06T00:00:00.000Z');

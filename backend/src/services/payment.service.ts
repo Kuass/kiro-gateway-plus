@@ -144,7 +144,7 @@ export class PaymentService {
     }
 
     // Validate subAccount (virtual account identifier)
-    const expectedAccount = process.env.SEPAY_ACCOUNT || 'VQRQAFRBD3142';
+    const expectedAccount = process.env.SEPAY_ACCOUNT || 'your-account-id';
     if (payload.subAccount !== expectedAccount) {
       console.log(`[Payment Webhook] Account check: subAccount=${payload.subAccount}, expected=${expectedAccount}`);
       return { processed: false, message: 'Ignored: account mismatch' };

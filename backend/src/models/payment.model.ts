@@ -81,7 +81,7 @@ export function generateQRCodeUrl(
 	amount: number,
 	username?: string,
 ): string {
-	const account = process.env.SEPAY_ACCOUNT || "VQRQAFRBD3142";
+	const account = process.env.SEPAY_ACCOUNT || "your-account-id";
 	const bank = process.env.SEPAY_BANK || "MBBank";
 	const description = username ? `${orderCode} ${username}` : orderCode;
 	return `https://qr.sepay.vn/img?acc=${account}&bank=${bank}&amount=${amount}&des=${encodeURIComponent(description)}`;
