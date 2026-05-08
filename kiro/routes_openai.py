@@ -688,6 +688,26 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     except Exception as e:
         logger.warning(f"Failed to log Kiro request: {e}")
     
+    # Prepare data for fallback token counting and billing
+    # Convert Pydantic models to dicts for tokenizer
+    messages_for_tokenizer = [msg.model_dump() for msg in request_data.messages]
+    tools_for_tokenizer = [tool.model_dump() for tool in request_data.tools] if request_data.tools else None
+
+    if BILLING_ENABLED and billing_user_id is not None:
+        prompt_tokens = count_message_tokens(messages_for_tokenizer, apply_claude_correction=False)
+        tool_tokens = count_tools_tokens(tools_for_tokenizer) if tools_for_tokenizer else 0
+        try:
+            required_credits = calculate_preflight_charge(
+                model_id=request_data.model,
+                prompt_tokens=prompt_tokens,
+                tool_tokens=tool_tokens,
+            )
+            ensure_user_has_sufficient_credits(billing_user_id, required_credits)
+        except UnknownModelPricingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except InsufficientCreditsError as exc:
+            raise HTTPException(status_code=402, detail=str(exc))
+
     # Create HTTP client with retry logic
     # For streaming: use per-request client to avoid CLOSE_WAIT leak on VPN disconnect (issue #54)
     # For non-streaming: use shared client for connection pooling
@@ -756,32 +776,12 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 }
             )
         
-        # Prepare data for fallback token counting
-        # Convert Pydantic models to dicts for tokenizer
-        messages_for_tokenizer = [msg.model_dump() for msg in request_data.messages]
-        tools_for_tokenizer = [tool.model_dump() for tool in request_data.tools] if request_data.tools else None
-
-        if BILLING_ENABLED and billing_user_id is not None:
-            prompt_tokens = count_message_tokens(messages_for_tokenizer, apply_claude_correction=False)
-            tool_tokens = count_tools_tokens(tools_for_tokenizer) if tools_for_tokenizer else 0
-            try:
-                required_credits = calculate_preflight_charge(
-                    model_id=request_data.model,
-                    prompt_tokens=prompt_tokens,
-                    tool_tokens=tool_tokens,
-                )
-                ensure_user_has_sufficient_credits(billing_user_id, required_credits)
-            except UnknownModelPricingError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
-            except InsufficientCreditsError as exc:
-                raise HTTPException(status_code=402, detail=str(exc))
-        
         if request_data.stream:
             # Streaming mode with first token retry
             async def stream_wrapper():
                 streaming_error = None
                 client_disconnected = False
-                final_usage: Optional[Dict[str, Any]] = None
+                deduction_applied = False
                 try:
                     # Create retry request function for retries
                     async def make_retry_request():
@@ -810,14 +810,39 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                             if isinstance(payload_data, dict):
                                 usage_data = payload_data.get("usage")
                                 if isinstance(usage_data, dict):
-                                    final_usage = usage_data
-                        yield chunk
+                                    if BILLING_ENABLED and billing_user_id is not None and not deduction_applied:
+                                        try:
+                                            charged = deduct_credits_for_usage(billing_user_id, request_data.model, usage_data)
+                                        except UnknownModelPricingError as exc:
+                                            logger.error(f"OpenAI streaming billing failed (unknown model): {exc}")
+                                            error_payload = {
+                                                "error": {
+                                                    "message": str(exc),
+                                                    "type": "billing_error",
+                                                    "code": 400,
+                                                }
+                                            }
+                                            yield f"data: {json.dumps(error_payload)}\n\n"
+                                            yield "data: [DONE]\n\n"
+                                            return
+                                        except InsufficientCreditsError as exc:
+                                            logger.error(f"OpenAI streaming billing failed (insufficient credits): {exc}")
+                                            error_payload = {
+                                                "error": {
+                                                    "message": str(exc),
+                                                    "type": "billing_error",
+                                                    "code": 402,
+                                                }
+                                            }
+                                            yield f"data: {json.dumps(error_payload)}\n\n"
+                                            yield "data: [DONE]\n\n"
+                                            return
 
-                    if BILLING_ENABLED and billing_user_id is not None and final_usage is not None:
-                        try:
-                            deduct_credits_for_usage(billing_user_id, request_data.model, final_usage)
-                        except (InsufficientCreditsError, UnknownModelPricingError) as exc:
-                            logger.error(f"Post-stream billing deduction failed: {exc}")
+                                        usage_data["credits_used"] = float(charged)
+                                        payload_data["usage"] = usage_data
+                                        chunk = f"data: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
+                                        deduction_applied = True
+                        yield chunk
                 except GeneratorExit:
                     # Client disconnected - this is normal
                     client_disconnected = True

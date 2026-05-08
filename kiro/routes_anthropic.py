@@ -936,7 +936,7 @@ async def messages(
             async def stream_wrapper():
                 streaming_error = None
                 client_disconnected = False
-                final_usage: Optional[Dict[str, Any]] = None
+                deduction_applied = False
                 try:
                     # Create retry request function for retries
                     async def make_retry_request():
@@ -967,17 +967,40 @@ async def messages(
                                 if isinstance(payload_data, dict):
                                     usage_payload = payload_data.get("usage")
                                     if isinstance(usage_payload, dict):
-                                        final_usage = {
+                                        usage_for_charge = {
                                             "input_tokens": prompt_tokens,
                                             "output_tokens": usage_payload.get("output_tokens", 0),
                                         }
-                        yield chunk
 
-                    if BILLING_ENABLED and billing_user_id is not None and final_usage is not None:
-                        try:
-                            deduct_credits_for_usage(billing_user_id, request_data.model, final_usage)
-                        except (InsufficientCreditsError, UnknownModelPricingError) as exc:
-                            logger.error(f"Post-stream Anthropic billing deduction failed: {exc}")
+                                        if BILLING_ENABLED and billing_user_id is not None and not deduction_applied:
+                                            try:
+                                                charged = deduct_credits_for_usage(
+                                                    billing_user_id,
+                                                    request_data.model,
+                                                    usage_for_charge,
+                                                )
+                                            except UnknownModelPricingError as exc:
+                                                logger.error(f"Anthropic streaming billing failed (unknown model): {exc}")
+                                                error_event = (
+                                                    f'event: error\n'
+                                                    f'data: {json.dumps({"type": "error", "error": {"type": "billing_error", "message": str(exc)}})}\n\n'
+                                                )
+                                                yield error_event
+                                                return
+                                            except InsufficientCreditsError as exc:
+                                                logger.error(f"Anthropic streaming billing failed (insufficient credits): {exc}")
+                                                error_event = (
+                                                    f'event: error\n'
+                                                    f'data: {json.dumps({"type": "error", "error": {"type": "billing_error", "message": str(exc)}})}\n\n'
+                                                )
+                                                yield error_event
+                                                return
+
+                                            usage_payload["credits_used"] = float(charged)
+                                            payload_data["usage"] = usage_payload
+                                            chunk = f"event: message_delta\ndata: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
+                                            deduction_applied = True
+                        yield chunk
                 except GeneratorExit:
                     client_disconnected = True
                     logger.debug("Client disconnected during streaming (GeneratorExit in routes)")
