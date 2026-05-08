@@ -40,6 +40,7 @@ from kiro.config import (
     API_KEY_SOURCE,
     BILLING_ENABLED,
     APP_VERSION,
+    PROFILE_ARN,
 )
 from kiro.models_openai import (
     OpenAIModel,
@@ -439,6 +440,8 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
             profile_arn_for_payload = ""
             if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
                 profile_arn_for_payload = auth_manager.profile_arn
+            elif PROFILE_ARN:
+                profile_arn_for_payload = PROFILE_ARN
             
             try:
                 kiro_payload = build_kiro_payload(
@@ -748,7 +751,9 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     profile_arn_for_payload = ""
     if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
         profile_arn_for_payload = auth_manager.profile_arn
-    
+    elif PROFILE_ARN:
+        profile_arn_for_payload = PROFILE_ARN
+
     try:
         kiro_payload = build_kiro_payload(
             request_data,

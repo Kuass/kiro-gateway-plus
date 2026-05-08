@@ -34,7 +34,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
 
-from kiro.config import PROXY_API_KEY, API_KEY_SOURCE, BILLING_ENABLED
+from kiro.config import PROXY_API_KEY, API_KEY_SOURCE, BILLING_ENABLED, PROFILE_ARN
 from kiro.models_anthropic import (
     AnthropicMessagesRequest,
     AnthropicCountTokensRequest,
@@ -494,6 +494,8 @@ async def messages(
             profile_arn_for_payload = ""
             if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
                 profile_arn_for_payload = auth_manager.profile_arn
+            elif PROFILE_ARN:
+                profile_arn_for_payload = PROFILE_ARN
             
             try:
                 kiro_payload = anthropic_to_kiro(
@@ -885,7 +887,9 @@ async def messages(
     profile_arn_for_payload = ""
     if auth_manager.auth_type == AuthType.KIRO_DESKTOP and auth_manager.profile_arn:
         profile_arn_for_payload = auth_manager.profile_arn
-    
+    elif PROFILE_ARN:
+        profile_arn_for_payload = PROFILE_ARN
+
     try:
         kiro_payload = anthropic_to_kiro(
             request_data,
