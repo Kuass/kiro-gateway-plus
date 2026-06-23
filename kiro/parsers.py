@@ -356,7 +356,7 @@ class AwsEventStreamParser:
         # input can be string or object
         input_data = data.get('input', '')
         if isinstance(input_data, dict):
-            input_str = json.dumps(input_data)
+            input_str = json.dumps(input_data) if input_data else ''
         else:
             input_str = str(input_data) if input_data else ''
         
@@ -380,7 +380,7 @@ class AwsEventStreamParser:
             # input can be string or object
             input_data = data.get('input', '')
             if isinstance(input_data, dict):
-                input_str = json.dumps(input_data)
+                input_str = json.dumps(input_data) if input_data else ''
             else:
                 input_str = str(input_data) if input_data else ''
             self.current_tool_call['function']['arguments'] += input_str
