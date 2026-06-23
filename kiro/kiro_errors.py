@@ -109,6 +109,9 @@ def enhance_kiro_error(error_json: Dict[str, Any]) -> KiroErrorInfo:
         # Monthly request limit exceeded - account quota exhausted
         user_message = "Monthly request limit exceeded. Account has reached its monthly quota."
 
+    elif reason == "INVALID_MODEL_ID":
+        user_message = "Invalid model ID or insufficient subscription level to use it."
+
     elif original_message == "Improperly formed request." and reason in (None, "UNKNOWN", "null"):
         # Generic 400 error
         user_message = (
