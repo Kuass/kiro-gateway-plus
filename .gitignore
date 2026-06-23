@@ -26,6 +26,8 @@ debug*.json
 # Project-specific
 _notes/
 requests/
+.omo/
+.sisyphus/
 
 # Testing
 .pytest_cache/
