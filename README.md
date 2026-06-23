@@ -72,10 +72,10 @@
 
 ```bash
 # Clone the repository (requires Git)
-git clone https://github.com/Jwadow/kiro-gateway.git
-cd kiro-gateway
+git clone https://github.com/Kuass/kiro-gateway-plus.git
+cd kiro-gateway-plus
 
-# Or download ZIP: Code → Download ZIP → extract → open kiro-gateway folder
+# Or download ZIP: Code → Download ZIP → extract → open kiro-gateway-plus folder
 
 # Install dependencies
 pip install -r requirements.txt
@@ -342,8 +342,8 @@ For complete configuration examples (including per-account region settings), see
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/Jwadow/kiro-gateway.git
-cd kiro-gateway
+git clone https://github.com/Kuass/kiro-gateway-plus.git
+cd kiro-gateway-plus
 cp .env.example .env
 # Edit .env with your credentials
 
@@ -366,7 +366,7 @@ docker run -d \
   -e PROXY_API_KEY="my-super-secret-password-123" \
   -e REFRESH_TOKEN="your_refresh_token" \
   --name kiro-gateway-plus \
-  ghcr.io/jwadow/kiro-gateway:latest
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
@@ -382,7 +382,7 @@ docker run -d \
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json \
   -e PROXY_API_KEY="my-super-secret-password-123" \
   --name kiro-gateway-plus \
-  ghcr.io/jwadow/kiro-gateway:latest
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 **Windows (PowerShell):**
@@ -393,7 +393,7 @@ docker run -d `
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json `
   -e PROXY_API_KEY="my-super-secret-password-123" `
   --name kiro-gateway-plus `
-  ghcr.io/jwadow/kiro-gateway:latest
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
@@ -402,7 +402,7 @@ docker run -d `
 <summary>🔹 Using .env File</summary>
 
 ```bash
-docker run -d -p 8000:8000 --env-file .env --name kiro-gateway-plus ghcr.io/jwadow/kiro-gateway:latest
+docker run -d -p 8000:8000 --env-file .env --name kiro-gateway-plus ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
