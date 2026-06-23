@@ -86,10 +86,10 @@ Hecho con ❤️ por [@Jwadow](https://github.com/jwadow)
 
 ```bash
 # Clona el repositorio (requiere Git)
-git clone https://github.com/Jwadow/kiro-gateway.git
-cd kiro-gateway
+git clone https://github.com/Kuass/kiro-gateway-plus.git
+cd kiro-gateway-plus
 
-# O descarga el ZIP: Code → Download ZIP → extrae → abre la carpeta kiro-gateway
+# O descarga el ZIP: Code → Download ZIP → extrae → abre la carpeta kiro-gateway-plus
 
 # Instala las dependencias
 pip install -r requirements.txt
@@ -351,8 +351,8 @@ Para ejemplos de configuración completos (incluyendo parámetros de región por
 
 ```bash
 # 1. Clona y configura
-git clone https://github.com/Jwadow/kiro-gateway.git
-cd kiro-gateway
+git clone https://github.com/Kuass/kiro-gateway-plus.git
+cd kiro-gateway-plus
 cp .env.example .env
 # Edita .env con tus credenciales
 
@@ -374,8 +374,8 @@ docker run -d \
   -p 8000:8000 \
   -e PROXY_API_KEY="my-super-secret-password-123" \
   -e REFRESH_TOKEN="your_refresh_token" \
-  --name kiro-gateway \
-  ghcr.io/jwadow/kiro-gateway:latest
+  --name kiro-gateway-plus \
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
@@ -390,8 +390,8 @@ docker run -d \
   -v ~/.aws/sso/cache:/home/kiro/.aws/sso/cache:ro \
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json \
   -e PROXY_API_KEY="my-super-secret-password-123" \
-  --name kiro-gateway \
-  ghcr.io/jwadow/kiro-gateway:latest
+  --name kiro-gateway-plus \
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 **Windows (PowerShell):**
@@ -401,8 +401,8 @@ docker run -d `
   -v ${HOME}/.aws/sso/cache:/home/kiro/.aws/sso/cache:ro `
   -e KIRO_CREDS_FILE=/home/kiro/.aws/sso/cache/kiro-auth-token.json `
   -e PROXY_API_KEY="my-super-secret-password-123" `
-  --name kiro-gateway `
-  ghcr.io/jwadow/kiro-gateway:latest
+  --name kiro-gateway-plus `
+  ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
@@ -411,7 +411,7 @@ docker run -d `
 <summary>🔹 Usando Archivo .env</summary>
 
 ```bash
-docker run -d -p 8000:8000 --env-file .env --name kiro-gateway ghcr.io/jwadow/kiro-gateway:latest
+docker run -d -p 8000:8000 --env-file .env --name kiro-gateway-plus ghcr.io/kuass/kiro-gateway-plus:latest
 ```
 
 </details>
@@ -448,7 +448,7 @@ docker-compose pull && docker-compose up -d  # Actualizar
 
 ```bash
 docker build -t kiro-gateway .
-docker run -d -p 8000:8000 --env-file .env kiro-gateway
+docker run -d -p 8000:8000 --env-file .env kiro-gateway-plus
 ```
 
 </details>
