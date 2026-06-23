@@ -523,6 +523,54 @@ class TestAnthropicMessageWithImages:
         assert message.content[1].source.type == "url"
         assert message.content[1].source.url == "https://example.com/image.jpg"
 
+    def test_message_with_server_tool_use_content_validates(self):
+        message = AnthropicMessage(
+            role="assistant",
+            content=[
+                {
+                    "type": "server_tool_use",
+                    "id": "srv_123",
+                    "name": "web_search",
+                    "input": {"query": "kiro gateway"},
+                }
+            ],
+        )
+
+        assert message.content[0].type == "server_tool_use"
+        assert message.content[0].id == "srv_123"
+        assert message.content[0].name == "web_search"
+        assert message.content[0].input == {"query": "kiro gateway"}
+
+    def test_message_with_web_search_tool_result_content_validates(self):
+        message = AnthropicMessage(
+            role="assistant",
+            content=[
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": "srv_123",
+                    "content": [{"type": "text", "text": "Kiro Gateway result"}],
+                }
+            ],
+        )
+
+        assert message.content[0].type == "web_search_tool_result"
+        assert message.content[0].tool_use_id == "srv_123"
+        assert message.content[0].content[0].text == "Kiro Gateway result"
+
+    def test_message_with_unknown_future_content_block_validates(self):
+        message = AnthropicMessage(
+            role="assistant",
+            content=[
+                {
+                    "type": "future_tool_block",
+                    "payload": {"value": 1},
+                }
+            ],
+        )
+
+        assert message.content[0].type == "future_tool_block"
+        assert message.content[0].payload == {"value": 1}
+
 
 # ==================================================================================================
 # Tests for AnthropicMessagesRequest with Image Content

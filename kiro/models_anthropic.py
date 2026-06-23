@@ -92,6 +92,29 @@ class ToolReferenceContentBlock(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class ServerToolUseContentBlock(BaseModel):
+    type: Literal["server_tool_use"] = "server_tool_use"
+    id: str
+    name: str
+    input: Dict[str, Any]
+
+    model_config = {"extra": "allow"}
+
+
+class WebSearchToolResultContentBlock(BaseModel):
+    type: Literal["web_search_tool_result"] = "web_search_tool_result"
+    tool_use_id: str
+    content: Optional[Union[str, List["TextContentBlock"]]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class UnknownContentBlock(BaseModel):
+    type: str
+
+    model_config = {"extra": "allow"}
+
+
 class ToolResultContentBlock(BaseModel):
     """
     Tool result content block in Anthropic format.
@@ -170,6 +193,9 @@ ContentBlock = Union[
     ToolUseContentBlock,
     ToolResultContentBlock,
     ToolReferenceContentBlock,
+    ServerToolUseContentBlock,
+    WebSearchToolResultContentBlock,
+    UnknownContentBlock,
 ]
 
 
