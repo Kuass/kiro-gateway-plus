@@ -869,6 +869,42 @@ class TestCollectStreamResponse:
         print("✓ Content collected correctly")
     
     @pytest.mark.asyncio
+    async def test_collect_strips_native_tool_markup_from_content(self, mock_http_client, mock_response, mock_model_cache, mock_auth_manager):
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Answer before markup <｜tool▁calls▁begin｜>{bad}")
+
+        with patch('kiro.streaming_openai.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_openai.parse_bracket_tool_calls', return_value=[]):
+                result = await collect_stream_response(
+                    mock_http_client, mock_response, "claude-sonnet-4",
+                    mock_model_cache, mock_auth_manager
+                )
+
+        assert result["choices"][0]["message"]["content"] == "Answer before markup "
+
+    @pytest.mark.asyncio
+    async def test_collect_strips_markup_without_dropping_tool_calls(self, mock_http_client, mock_response, mock_model_cache, mock_auth_manager):
+        async def mock_parse_kiro_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="Tool result <｜DSML｜>serialized garbage")
+            yield KiroEvent(type="tool_use", tool_use={
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": '{"query":"kiro"}'},
+            })
+
+        with patch('kiro.streaming_openai.parse_kiro_stream', mock_parse_kiro_stream):
+            with patch('kiro.streaming_openai.parse_bracket_tool_calls', return_value=[]):
+                result = await collect_stream_response(
+                    mock_http_client, mock_response, "claude-sonnet-4",
+                    mock_model_cache, mock_auth_manager
+                )
+
+        message = result["choices"][0]["message"]
+        assert message["content"] == "Tool result "
+        assert message["tool_calls"][0]["function"]["name"] == "lookup"
+        assert message["tool_calls"][0]["function"]["arguments"] == '{"query":"kiro"}'
+
+    @pytest.mark.asyncio
     async def test_collects_reasoning_content(self, mock_http_client, mock_response, mock_model_cache, mock_auth_manager):
         """
         What it does: Collects reasoning content from stream.

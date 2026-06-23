@@ -68,6 +68,22 @@ except ImportError:
 # Re-export FirstTokenTimeoutError for backward compatibility
 __all__ = ['FirstTokenTimeoutError', 'stream_kiro_to_openai', 'stream_with_first_token_retry', 'collect_stream_response']
 
+TOOL_MARKUP_MARKERS = (
+    "<｜DSML｜",
+    "<｜tool▁calls▁begin｜>",
+    "<｜tool▁call▁begin｜>",
+)
+
+
+def strip_tool_markup(content: str) -> str:
+    cut_positions = [
+        position for marker in TOOL_MARKUP_MARKERS
+        if (position := content.find(marker)) != -1
+    ]
+    if not cut_positions:
+        return content
+    return content[:min(cut_positions)]
+
 
 async def stream_kiro_to_openai_internal(
     client: httpx.AsyncClient,
@@ -669,7 +685,7 @@ async def collect_stream_response(
             continue
     
     # Form final response
-    message = {"role": "assistant", "content": full_content}
+    message = {"role": "assistant", "content": strip_tool_markup(full_content)}
     if full_reasoning_content:
         message["reasoning_content"] = full_reasoning_content
     if tool_calls:
