@@ -467,7 +467,7 @@ async def messages(
                     # Multiple accounts - generic error with context
                     detail = "No available accounts for this model."
                     if last_error_message:
-                        detail += f" Last error: {last_error_message}"
+                        detail += f" Error from last account: {last_error_message}"
                     return JSONResponse(
                         status_code=503,
                         content={
@@ -839,7 +839,7 @@ async def messages(
             # Multiple accounts - generic error with context
             detail = "All accounts failed after full circle."
             if last_error_message:
-                detail += f" Last error: {last_error_message}"
+                detail += f" Error from last account: {last_error_message}"
             return JSONResponse(
                 status_code=503,
                 content={
