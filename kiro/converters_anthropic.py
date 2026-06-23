@@ -24,11 +24,12 @@ This module is an adapter layer that converts Anthropic-specific formats
 to the unified format used by converters_core.py.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from kiro.config import HIDDEN_MODELS
+from kiro.config import HIDDEN_MODELS, STRIP_BILLING_HEADER
 from kiro.model_resolver import get_model_id_for_kiro
 from kiro.models_anthropic import (
     AnthropicMessagesRequest,
@@ -43,6 +44,15 @@ from kiro.converters_core import (
     extract_text_content,
     extract_images_from_content,
 )
+
+
+BILLING_HEADER_RE = re.compile(r"^x-anthropic-billing-header:[^\r\n]*(?:\r?\n)?")
+
+
+def strip_billing_header(text: str) -> str:
+    if not STRIP_BILLING_HEADER:
+        return text
+    return BILLING_HEADER_RE.sub("", text, count=1)
 
 
 def convert_anthropic_content_to_text(content: Any) -> str:
@@ -96,7 +106,7 @@ def extract_system_prompt(system: Any) -> str:
         return ""
 
     if isinstance(system, str):
-        return system
+        return strip_billing_header(system)
 
     if isinstance(system, list):
         text_parts = []
@@ -104,10 +114,16 @@ def extract_system_prompt(system: Any) -> str:
             if isinstance(block, dict):
                 # Handle {"type": "text", "text": "...", "cache_control": {...}}
                 if block.get("type") == "text":
-                    text_parts.append(block.get("text", ""))
+                    original_text = block.get("text", "")
+                    text = strip_billing_header(original_text)
+                    if text or not original_text or text == original_text:
+                        text_parts.append(text)
             elif hasattr(block, "type") and block.type == "text":
                 # Handle Pydantic model
-                text_parts.append(getattr(block, "text", ""))
+                original_text = getattr(block, "text", "")
+                text = strip_billing_header(original_text)
+                if text or not original_text or text == original_text:
+                    text_parts.append(text)
         return "\n".join(text_parts)
 
     return str(system)

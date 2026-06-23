@@ -351,6 +351,7 @@ KIRO_CLI_DB_FILE: str = normalize_config_path(_raw_cli_db_file)
 # Useful when kiro-cli is actively managing tokens and you don't want gateway to interfere.
 # Default: false (write-back enabled)
 SQLITE_READONLY: bool = os.getenv("SQLITE_READONLY", "false").lower() in ("true", "1", "yes")
+STRIP_BILLING_HEADER: bool = os.getenv("STRIP_BILLING_HEADER", "true").lower() in ("true", "1", "yes")
 
 # ==================================================================================================
 # Kiro API URL Templates

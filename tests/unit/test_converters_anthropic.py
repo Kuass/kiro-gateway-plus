@@ -15,6 +15,7 @@ Tests for Anthropic Messages API to Kiro format conversion:
 import pytest
 from unittest.mock import patch, MagicMock
 
+import kiro.converters_anthropic as converters_anthropic
 from kiro.converters_anthropic import (
     convert_anthropic_content_to_text,
     extract_system_prompt,
@@ -262,6 +263,68 @@ class TestExtractSystemPrompt:
 
         print(f"Comparing result: Expected '', Got '{result}'")
         assert result == ""
+
+    def test_strips_billing_header_from_string_system_prompt(self):
+        system = "x-anthropic-billing-header: cc_version=2.1.0; cch=abcdef123456;\nYou are helpful."
+
+        result = extract_system_prompt(system)
+
+        assert result == "You are helpful."
+
+    def test_drops_pure_billing_header_system_block(self):
+        system = [
+            {"type": "text", "text": "x-anthropic-billing-header: cc_version=2.1.0; cch=abcdef123456;"},
+            {"type": "text", "text": "You are helpful."},
+        ]
+
+        result = extract_system_prompt(system)
+
+        assert result == "You are helpful."
+
+    def test_strips_billing_header_prefix_from_mixed_system_block(self):
+        system = [
+            {
+                "type": "text",
+                "text": "x-anthropic-billing-header: cc_version=2.1.0; cch=abcdef123456;\nKeep answers concise.",
+            },
+        ]
+
+        result = extract_system_prompt(system)
+
+        assert result == "Keep answers concise."
+
+    def test_strips_billing_header_line_with_non_hex_cch(self):
+        system = "x-anthropic-billing-header: cc_version=2.1.0; cch=abc-def;\nYou are helpful."
+
+        result = extract_system_prompt(system)
+
+        assert result == "You are helpful."
+
+    def test_strips_entire_billing_header_line_with_extra_fields(self):
+        system = "x-anthropic-billing-header: cc_version=2.1.0; cch=abc123; extra=value\nYou are helpful."
+
+        result = extract_system_prompt(system)
+
+        assert result == "You are helpful."
+
+    def test_preserves_empty_system_text_blocks_as_separators(self):
+        system = [
+            {"type": "text", "text": "First"},
+            {"type": "text", "text": ""},
+            {"type": "text", "text": "Second"},
+        ]
+
+        result = extract_system_prompt(system)
+
+        assert result == "First\n\nSecond"
+
+    def test_keeps_billing_header_when_stripping_disabled(self, monkeypatch):
+        monkeypatch.setattr(converters_anthropic, "STRIP_BILLING_HEADER", False)
+        system = "x-anthropic-billing-header: cc_version=2.1.0; cch=abcdef123456;\nYou are helpful."
+
+        result = extract_system_prompt(system)
+
+        assert result == system
 
     def test_handles_mixed_content_blocks(self):
         """
