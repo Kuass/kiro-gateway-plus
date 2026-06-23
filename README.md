@@ -18,6 +18,13 @@
 > - [#152](https://github.com/jwadow/kiro-gateway/pull/152) — normalize credential and SQLite paths for Windows compatibility (`2f41e3e`).
 > - [#155](https://github.com/jwadow/kiro-gateway/pull/155) — migrate Kiro API calls to `runtime.<region>.kiro.dev` for the May 15, 2026 endpoint change (`688f80a`).
 >
+> **Open upstream PRs manually reviewed and applied on 2026-06-23:**
+> - [#215](https://github.com/jwadow/kiro-gateway/pull/215) — strip Anthropic SDK billing attribution headers from system prompts, controlled by `STRIP_BILLING_HEADER` (`acbe520`).
+> - [#216](https://github.com/jwadow/kiro-gateway/pull/216) — strip native tool-call markup from OpenAI non-streaming responses while preserving parsed tool calls (`325d1e9`).
+> - [#222](https://github.com/jwadow/kiro-gateway/pull/222) — normalize tool JSON Schemas by removing schema metadata and ensuring Kiro receives object-root schemas (`1b15a65`).
+> - [#224](https://github.com/jwadow/kiro-gateway/pull/224) — accept Anthropic server-side tool-use, web-search result, and unknown future content blocks (`146a032`).
+> - [#228](https://github.com/jwadow/kiro-gateway/pull/228) — apply only the fork-safe document/PDF subset: Anthropic document validation, unified conversion, and Kiro `documents` payload support (`db39022`).
+>
 > **Additional fork-only patches:**
 > - `response_format` JSON instruction support for OpenAI-compatible requests (`f145f5d`).
 > - Upstream sync/reconciliation commits after rebasing the fork onto current upstream (`4fd8bc1` and follow-up commits).
