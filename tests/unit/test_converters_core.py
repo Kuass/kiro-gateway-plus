@@ -2751,6 +2751,73 @@ class TestSanitizeJsonSchema:
         print("Checking enum is preserved...")
         assert result["enum"] == ["value1", "value2", "value3"]
     
+    def test_removes_json_schema_metadata_recursively_but_preserves_refs(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "type": "object",
+            "properties": {
+                "item": {
+                    "$anchor": "itemAnchor",
+                    "$comment": "internal note",
+                    "$ref": "#/$defs/item",
+                }
+            },
+            "$defs": {
+                "item": {
+                    "type": "string",
+                    "$comment": "keep defs but remove comment",
+                }
+            },
+        }
+
+        result = sanitize_json_schema(schema)
+
+        assert "$schema" not in result
+        assert "$id" not in result
+        assert "$anchor" not in result["properties"]["item"]
+        assert "$comment" not in result["properties"]["item"]
+        assert result["properties"]["item"]["$ref"] == "#/$defs/item"
+        assert "$defs" in result
+        assert "$comment" not in result["$defs"]["item"]
+
+    def test_sanitize_json_schema_does_not_mutate_input(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"query": {"type": "string", "$comment": "note"}},
+        }
+
+        sanitize_json_schema(schema)
+
+        assert "$schema" in schema
+        assert "$comment" in schema["properties"]["query"]
+
+    def test_convert_tools_adds_object_type_to_missing_root_type(self):
+        tools = [UnifiedTool(
+            name="search",
+            description="Search",
+            input_schema={"properties": {"query": {"type": "string"}}},
+        )]
+
+        result = convert_tools_to_kiro_format(tools)
+
+        schema = result[0]["toolSpecification"]["inputSchema"]["json"]
+        assert schema["type"] == "object"
+        assert schema["properties"]["query"]["type"] == "string"
+
+    def test_convert_tools_replaces_non_object_root_schema_with_object(self):
+        tools = [UnifiedTool(
+            name="search",
+            description="Search",
+            input_schema={"type": "string"},
+        )]
+
+        result = convert_tools_to_kiro_format(tools)
+
+        schema = result[0]["toolSpecification"]["inputSchema"]["json"]
+        assert schema == {"type": "object", "properties": {}}
+
     def test_complex_real_world_schema(self):
         """
         What it does: Verifies sanitization of real complex schema.

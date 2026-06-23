@@ -47,6 +47,9 @@ from kiro.config import (
 from kiro.payload_guards import check_payload_size, trim_payload_to_limit
 
 
+JSON_SCHEMA_METADATA_KEYS = {"$schema", "$id", "$anchor", "$comment"}
+
+
 # ==================================================================================================
 # Data Classes for Unified Message Format
 # ==================================================================================================
@@ -466,6 +469,9 @@ def sanitize_json_schema(schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if key == "additionalProperties":
             continue
         
+        if key in JSON_SCHEMA_METADATA_KEYS:
+            continue
+
         # Recursively process nested objects
         if key == "properties" and isinstance(value, dict):
             result[key] = {
@@ -483,6 +489,20 @@ def sanitize_json_schema(schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         else:
             result[key] = value
     
+    return result
+
+
+def ensure_object_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    if not schema:
+        return {"type": "object", "properties": {}}
+
+    if schema.get("type") and schema.get("type") != "object":
+        return {"type": "object", "properties": {}}
+
+    result = dict(schema)
+    result["type"] = "object"
+    if "properties" not in result:
+        result["properties"] = {}
     return result
 
 
@@ -615,7 +635,7 @@ def convert_tools_to_kiro_format(tools: Optional[List[UnifiedTool]]) -> List[Dic
     kiro_tools = []
     for tool in tools:
         # Sanitize parameters from fields that Kiro API doesn't accept
-        sanitized_params = sanitize_json_schema(tool.input_schema)
+        sanitized_params = ensure_object_schema(sanitize_json_schema(tool.input_schema))
         
         # Kiro API requires non-empty description
         description = tool.description
