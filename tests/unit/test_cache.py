@@ -9,6 +9,7 @@ import asyncio
 import time
 import pytest
 
+import kiro.cache as cache_module
 from kiro.cache import ModelInfoCache
 from kiro.config import DEFAULT_MAX_INPUT_TOKENS
 
@@ -266,6 +267,51 @@ class TestModelInfoCacheGetMaxInputTokens:
         print("Проверка: Возвращён дефолт...")
         print(f"Сравниваем max_tokens: Ожидалось {DEFAULT_MAX_INPUT_TOKENS}, Получено {max_tokens}")
         assert max_tokens == DEFAULT_MAX_INPUT_TOKENS
+
+    @pytest.mark.asyncio
+    async def test_get_max_input_tokens_uses_model_override(self):
+        """
+        What it does: Verifies a configured model prefix overrides cached token limits.
+        Purpose: Prevent premature client-side compaction for models with larger real contexts.
+        """
+        print("Setup: Creating cache with stale Opus token limit...")
+        cache = ModelInfoCache()
+        await cache.update([{
+            "modelId": "claude-opus-4.5",
+            "tokenLimits": {"maxInputTokens": 200000}
+        }])
+
+        print("Action: Getting maxInputTokens for claude-opus-4.5...")
+        max_tokens = cache.get_max_input_tokens("claude-opus-4.5")
+
+        print("Verify: Override wins over cached tokenLimits...")
+        print(f"Comparing max_tokens: Expected 1000000, Got {max_tokens}")
+        assert max_tokens == 1000000
+
+    def test_get_max_input_tokens_override_prefers_longest_prefix(self, monkeypatch):
+        """
+        What it does: Verifies overlapping override prefixes choose the most specific key.
+        Purpose: Ensure future model-specific overrides can refine broader family defaults.
+        """
+        print("Setup: Adding overlapping override prefixes...")
+        monkeypatch.setitem(
+            cache_module.MODEL_MAX_INPUT_TOKENS_OVERRIDE,
+            "test-model",
+            1000,
+        )
+        monkeypatch.setitem(
+            cache_module.MODEL_MAX_INPUT_TOKENS_OVERRIDE,
+            "test-model-special",
+            2000,
+        )
+        cache = ModelInfoCache()
+
+        print("Action: Getting maxInputTokens for matching special model...")
+        max_tokens = cache.get_max_input_tokens("test-model-special-v1")
+
+        print("Verify: Longest matching prefix wins...")
+        print(f"Comparing max_tokens: Expected 2000, Got {max_tokens}")
+        assert max_tokens == 2000
 
 
 class TestModelInfoCacheIsEmpty:

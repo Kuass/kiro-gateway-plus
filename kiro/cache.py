@@ -30,7 +30,11 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from kiro.config import MODEL_CACHE_TTL, DEFAULT_MAX_INPUT_TOKENS
+from kiro.config import (
+    DEFAULT_MAX_INPUT_TOKENS,
+    MODEL_CACHE_TTL,
+    MODEL_MAX_INPUT_TOKENS_OVERRIDE,
+)
 
 
 class ModelInfoCache:
@@ -136,11 +140,26 @@ class ModelInfoCache:
         Returns:
             Maximum number of input tokens or DEFAULT_MAX_INPUT_TOKENS
         """
+        override = self._resolve_override(model_id)
+        if override is not None:
+            return override
+
         model = self._cache.get(model_id)
         if model and model.get("tokenLimits"):
             return model["tokenLimits"].get("maxInputTokens") or DEFAULT_MAX_INPUT_TOKENS
         return DEFAULT_MAX_INPUT_TOKENS
     
+    @staticmethod
+    def _resolve_override(model_id: str) -> Optional[int]:
+        best_match: Optional[str] = None
+        for prefix in MODEL_MAX_INPUT_TOKENS_OVERRIDE:
+            if model_id.startswith(prefix):
+                if best_match is None or len(prefix) > len(best_match):
+                    best_match = prefix
+        if best_match is not None:
+            return MODEL_MAX_INPUT_TOKENS_OVERRIDE[best_match]
+        return None
+
     def is_empty(self) -> bool:
         """
         Checks if the cache is empty.

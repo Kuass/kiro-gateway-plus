@@ -519,6 +519,21 @@ MODEL_CACHE_TTL: int = 3600
 # Default maximum number of input tokens
 DEFAULT_MAX_INPUT_TOKENS: int = 200000
 
+# Model-specific maxInputTokens overrides.
+# Kiro API's /ListAvailableModels reports maxInputTokens=200000 for all Claude models,
+# but newer models (e.g., Claude Opus 4.5+) actually support up to 1M context.
+# This override ensures token counting (from context_usage_percentage) uses the correct
+# context window size, preventing downstream clients from triggering premature compaction.
+#
+# Format: {"model_id_prefix": max_input_tokens}
+# Matching is prefix-based: if model_id starts with the key, the override applies.
+# More specific keys (longer strings) take priority.
+MODEL_MAX_INPUT_TOKENS_OVERRIDE: Dict[str, int] = {
+    "claude-opus-4": 1000000,
+    "claude-sonnet-4": 200000,
+    "claude-haiku-4": 200000,
+}
+
 # ==================================================================================================
 # Tool Description Handling (Kiro API Limitations)
 # ==================================================================================================
