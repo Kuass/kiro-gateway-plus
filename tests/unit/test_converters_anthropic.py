@@ -39,6 +39,9 @@ from kiro.models_anthropic import (
 )
 
 
+TEST_PDF_BASE64 = "JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nPj4KZW5kb2JqCg=="
+
+
 # ==================================================================================================
 # Tests for convert_anthropic_content_to_text
 # ==================================================================================================
@@ -1370,6 +1373,98 @@ class TestConvertAnthropicMessages:
         # The function logs "Converted X Anthropic messages: Y tool_calls, Z tool_results, W images"
         # We verify the images are extracted correctly, which proves the counting works
         print("Images extracted successfully - logging verification complete")
+
+    # ==================================================================================
+    # Document extraction tests (PDF support)
+    # ==================================================================================
+
+    def test_extracts_documents_from_user_message(self):
+        """
+        What it does: Verifies that documents are extracted from user messages.
+        Purpose: Ensure Anthropic PDF content blocks are converted to unified format.
+        """
+        print("Setup: User message with PDF document content block...")
+        messages = [
+            AnthropicMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Summarize this PDF"},
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": TEST_PDF_BASE64,
+                        },
+                    },
+                ],
+            )
+        ]
+
+        print("Action: Converting messages...")
+        result = convert_anthropic_messages(messages)
+
+        print(f"Result: {result}")
+        print(f"Documents: {result[0].documents}")
+
+        assert len(result) == 1
+        assert result[0].role == "user"
+        assert result[0].content == "Summarize this PDF"
+
+        print("Checking documents field...")
+        assert result[0].documents is not None, "documents field should not be None"
+        assert len(result[0].documents) == 1, (
+            f"Expected 1 document, got {len(result[0].documents)}"
+        )
+
+        document = result[0].documents[0]
+        print(
+            f"Comparing document: Expected media_type='application/pdf', Got '{document.get('media_type')}'"
+        )
+        assert document["media_type"] == "application/pdf"
+
+        print(
+            f"Comparing document data: Expected {TEST_PDF_BASE64[:20]}..., Got {document.get('data', '')[:20]}..."
+        )
+        assert document["data"] == TEST_PDF_BASE64
+
+    def test_documents_only_extracted_from_user_role(self):
+        """
+        What it does: Verifies that documents are only extracted from user messages.
+        Purpose: Ensure assistant messages do not have documents extracted.
+        """
+        print("Setup: Conversation with document in user message only...")
+        messages = [
+            AnthropicMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Read this document"},
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": TEST_PDF_BASE64,
+                        },
+                    },
+                ],
+            ),
+            AnthropicMessage(role="assistant", content="I can summarize it."),
+        ]
+
+        print("Action: Converting messages...")
+        result = convert_anthropic_messages(messages)
+
+        print(f"Result: {result}")
+
+        print("Checking user message has documents...")
+        assert result[0].documents is not None
+        assert len(result[0].documents) == 1
+
+        print("Checking assistant message has no documents...")
+        assert result[1].documents is None, (
+            "Assistant messages should not have documents extracted"
+        )
 
 
 # ==================================================================================================

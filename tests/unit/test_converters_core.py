@@ -18,7 +18,9 @@ from unittest.mock import patch
 from kiro.converters_core import (
     extract_text_content,
     extract_images_from_content,
+    extract_documents_from_content,
     convert_images_to_kiro_format,
+    convert_documents_to_kiro_format,
     merge_adjacent_messages,
     ensure_first_message_is_user,
     normalize_message_roles,
@@ -43,6 +45,7 @@ from kiro.converters_core import (
 
 # Test data for images - 1x1 pixel JPEG
 TEST_IMAGE_BASE64 = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+TEST_PDF_BASE64 = "JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nPj4KZW5kb2JqCg=="
 
 
 # ==================================================================================================
@@ -737,6 +740,72 @@ class TestExtractImagesFromContent:
 
 
 # ==================================================================================================
+# Tests for extract_documents_from_content
+# ==================================================================================================
+
+class TestExtractDocumentsFromContent:
+    """Tests for extract_documents_from_content function."""
+
+    def test_extracts_base64_pdf_document(self):
+        """
+        What it does: Verifies extraction of Anthropic PDF document blocks.
+        Purpose: Ensure Claude Code PDF reads are carried into unified messages.
+        """
+        print("Setup: Anthropic PDF document block...")
+        content = [
+            {"type": "text", "text": "Summarize this PDF"},
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": TEST_PDF_BASE64,
+                },
+            },
+        ]
+
+        print("Action: Extracting documents...")
+        result = extract_documents_from_content(content)
+
+        assert result == [{"media_type": "application/pdf", "data": TEST_PDF_BASE64}]
+
+    def test_extracts_from_pydantic_document_block(self):
+        """
+        What it does: Verifies extraction from Pydantic DocumentContentBlock objects.
+        Purpose: Ensure parsed Anthropic requests preserve PDF data.
+        """
+        from kiro.models_anthropic import DocumentContentBlock, DocumentSource
+
+        print("Setup: Pydantic DocumentContentBlock...")
+        content = [
+            DocumentContentBlock(
+                source=DocumentSource(media_type="application/pdf", data=TEST_PDF_BASE64)
+            )
+        ]
+
+        print("Action: Extracting documents...")
+        result = extract_documents_from_content(content)
+
+        assert result == [{"media_type": "application/pdf", "data": TEST_PDF_BASE64}]
+
+    def test_skips_empty_document_data(self):
+        """
+        What it does: Verifies empty document data is skipped.
+        Purpose: Ensure malformed document blocks do not reach Kiro payloads.
+        """
+        content = [
+            {
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": ""},
+            }
+        ]
+
+        result = extract_documents_from_content(content)
+
+        assert result == []
+
+
+# ==================================================================================================
 # Tests for convert_images_to_kiro_format
 # ==================================================================================================
 
@@ -817,8 +886,47 @@ class TestConvertImagesToKiroFormat:
         
         print("Action: Converting to Kiro format...")
         result = convert_images_to_kiro_format([])
-        
+
         print(f"Comparing result: Expected [], Got {result}")
+        assert result == []
+
+
+# ==================================================================================================
+# Tests for convert_documents_to_kiro_format
+# ==================================================================================================
+
+class TestConvertDocumentsToKiroFormat:
+    """Tests for convert_documents_to_kiro_format function."""
+
+    def test_converts_pdf_document(self):
+        """
+        What it does: Verifies conversion of a PDF document.
+        Purpose: Ensure unified PDF documents are formatted for Kiro userInputMessage.documents.
+        """
+        documents = [{"media_type": "application/pdf", "data": TEST_PDF_BASE64}]
+
+        result = convert_documents_to_kiro_format(documents)
+
+        assert result == [{"format": "pdf", "source": {"bytes": TEST_PDF_BASE64}}]
+
+    def test_returns_empty_for_none(self):
+        """
+        What it does: Verifies handling of None.
+        Purpose: Ensure no documents returns an empty Kiro documents list.
+        """
+        result = convert_documents_to_kiro_format(None)
+
+        assert result == []
+
+    def test_skips_empty_document_data(self):
+        """
+        What it does: Verifies empty document data is skipped.
+        Purpose: Ensure malformed unified documents are not sent to Kiro.
+        """
+        documents = [{"media_type": "application/pdf", "data": ""}]
+
+        result = convert_documents_to_kiro_format(documents)
+
         assert result == []
     
     def test_skips_images_with_empty_data(self):
@@ -6003,6 +6111,64 @@ class TestBuildKiroPayloadImages:
         print("Checking that thinking tags were injected in content...")
         content = current_msg["content"]
         assert "<thinking_mode>" in content
+
+    def test_includes_documents_in_current_message(self):
+        """
+        What it does: Verifies documents are included in the current message.
+        Purpose: Ensure PDF documents are directly in userInputMessage.documents.
+        """
+        messages = [
+            UnifiedMessage(
+                role="user",
+                content="Summarize this PDF",
+                documents=[{"media_type": "application/pdf", "data": TEST_PDF_BASE64}],
+            )
+        ]
+
+        result = build_kiro_payload(
+            messages=messages,
+            system_prompt="",
+            model_id="claude-sonnet-4",
+            tools=None,
+            conversation_id="test-conv",
+            profile_arn="arn:test",
+            thinking_config=ThinkingConfig(enabled=False),
+        )
+
+        current_msg = result.payload["conversationState"]["currentMessage"]["userInputMessage"]
+        assert current_msg["documents"] == [
+            {"format": "pdf", "source": {"bytes": TEST_PDF_BASE64}}
+        ]
+
+    def test_includes_documents_in_history(self):
+        """
+        What it does: Verifies documents are included in history messages.
+        Purpose: Ensure earlier PDF documents survive history conversion.
+        """
+        messages = [
+            UnifiedMessage(
+                role="user",
+                content="Read this PDF",
+                documents=[{"media_type": "application/pdf", "data": TEST_PDF_BASE64}],
+            ),
+            UnifiedMessage(role="assistant", content="I can read it."),
+            UnifiedMessage(role="user", content="Summarize it"),
+        ]
+
+        result = build_kiro_payload(
+            messages=messages,
+            system_prompt="",
+            model_id="claude-sonnet-4",
+            tools=None,
+            conversation_id="test-conv",
+            profile_arn="arn:test",
+            thinking_config=ThinkingConfig(enabled=False),
+        )
+
+        history_msg = result.payload["conversationState"]["history"][0]["userInputMessage"]
+        assert history_msg["documents"] == [
+            {"format": "pdf", "source": {"bytes": TEST_PDF_BASE64}}
+        ]
 
 
 # ==================================================================================================

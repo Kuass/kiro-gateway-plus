@@ -26,6 +26,8 @@ from kiro.models_anthropic import (
     Base64ImageSource,
     URLImageSource,
     ImageContentBlock,
+    DocumentSource,
+    DocumentContentBlock,
     ContentBlock,
     # Message models
     AnthropicMessage,
@@ -62,6 +64,7 @@ from kiro.models_anthropic import (
 
 # Base64 1x1 pixel JPEG for testing
 TEST_IMAGE_BASE64 = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+TEST_PDF_BASE64 = "JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nPj4KZW5kb2JqCg=="
 
 
 # ==================================================================================================
@@ -318,6 +321,64 @@ class TestImageContentBlock:
 
 
 # ==================================================================================================
+# Tests for DocumentContentBlock
+# ==================================================================================================
+
+class TestDocumentContentBlock:
+    """Tests for DocumentContentBlock Pydantic model."""
+
+    def test_with_base64_pdf_source(self):
+        """
+        What it does: Verifies creation of DocumentContentBlock with base64 PDF source.
+        Purpose: Ensure Anthropic document/PDF blocks validate for Claude Code PDF reads.
+        """
+        print("Setup: Creating DocumentContentBlock with base64 PDF source...")
+        block = DocumentContentBlock(
+            type="document",
+            source=DocumentSource(
+                media_type="application/pdf",
+                data=TEST_PDF_BASE64,
+            ),
+        )
+
+        print(f"Result: {block}")
+        assert block.type == "document"
+        assert block.source.type == "base64"
+        assert block.source.media_type == "application/pdf"
+        assert block.source.data == TEST_PDF_BASE64
+
+    def test_with_dict_pdf_source(self):
+        """
+        What it does: Verifies creation of DocumentContentBlock with dict source.
+        Purpose: Ensure raw API dict payloads validate correctly.
+        """
+        print("Setup: Creating DocumentContentBlock with dict PDF source...")
+        block = DocumentContentBlock(
+            type="document",
+            source={
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": TEST_PDF_BASE64,
+            },
+        )
+
+        assert block.type == "document"
+        assert block.source.type == "base64"
+        assert block.source.media_type == "application/pdf"
+
+    def test_requires_source(self):
+        """
+        What it does: Verifies that source is required.
+        Purpose: Ensure malformed document blocks fail validation.
+        """
+        print("Setup: Attempting to create DocumentContentBlock without source...")
+        with pytest.raises(ValidationError) as exc_info:
+            DocumentContentBlock(type="document")
+
+        assert "source" in str(exc_info.value)
+
+
+# ==================================================================================================
 # Tests for ContentBlock Union
 # ==================================================================================================
 
@@ -355,6 +416,19 @@ class TestContentBlockUnion:
         print(f"Comparing type: Expected 'image', Got '{block.type}'")
         assert block.type == "image"
         assert block.source.type == "base64"
+
+    def test_accepts_document_content_block(self):
+        """
+        What it does: Verifies ContentBlock accepts DocumentContentBlock.
+        Purpose: Ensure Anthropic document/PDF blocks are valid content blocks.
+        """
+        print("Setup: Creating DocumentContentBlock...")
+        block: ContentBlock = DocumentContentBlock(
+            source=DocumentSource(media_type="application/pdf", data=TEST_PDF_BASE64)
+        )
+
+        assert block.type == "document"
+        assert block.source.media_type == "application/pdf"
     
     def test_accepts_tool_use_content_block(self):
         """
@@ -522,6 +596,26 @@ class TestAnthropicMessageWithImages:
         print(f"Comparing content[1].source.type: Expected 'url', Got '{message.content[1].source.type}'")
         assert message.content[1].source.type == "url"
         assert message.content[1].source.url == "https://example.com/image.jpg"
+
+    def test_message_with_pdf_document_content_validates(self):
+        message = AnthropicMessage(
+            role="user",
+            content=[
+                {"type": "text", "text": "Summarize this PDF"},
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": TEST_PDF_BASE64,
+                    },
+                },
+            ],
+        )
+
+        assert message.content[1].type == "document"
+        assert message.content[1].source.type == "base64"
+        assert message.content[1].source.media_type == "application/pdf"
 
     def test_message_with_server_tool_use_content_validates(self):
         message = AnthropicMessage(

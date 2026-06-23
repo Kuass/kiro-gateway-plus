@@ -98,12 +98,15 @@ class UnifiedMessage:
         tool_results: List of tool results (for user messages with tool responses)
         images: List of images in unified format (for multimodal user messages)
                 Format: [{"media_type": "image/jpeg", "data": "base64..."}]
+        documents: List of documents in unified format (for multimodal user messages)
+                Format: [{"media_type": "application/pdf", "data": "base64..."}]
     """
     role: str
     content: Any = ""
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_results: Optional[List[Dict[str, Any]]] = None
     images: Optional[List[Dict[str, Any]]] = None
+    documents: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
@@ -298,6 +301,51 @@ def extract_images_from_content(content: Any) -> List[Dict[str, Any]]:
         logger.debug(f"Extracted {len(images)} image(s) from content")
     
     return images
+
+
+def extract_documents_from_content(content: Any) -> List[Dict[str, Any]]:
+    """
+    Extracts PDF documents from message content in unified format.
+
+    Supports Anthropic document blocks:
+    {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "..."}}
+    """
+    documents: List[Dict[str, Any]] = []
+
+    if not isinstance(content, list):
+        return documents
+
+    for item in content:
+        if isinstance(item, dict):
+            item_type = item.get("type")
+        elif hasattr(item, "type"):
+            item_type = item.type
+        else:
+            continue
+
+        if item_type != "document":
+            continue
+
+        source = item.get("source", {}) if isinstance(item, dict) else getattr(item, "source", None)
+        if source is None:
+            continue
+
+        if isinstance(source, dict):
+            source_type = source.get("type")
+            media_type = source.get("media_type", "application/pdf")
+            data = source.get("data", "")
+        else:
+            source_type = getattr(source, "type", None)
+            media_type = getattr(source, "media_type", "application/pdf")
+            data = getattr(source, "data", "")
+
+        if source_type == "base64" and data:
+            documents.append({"media_type": media_type, "data": data})
+
+    if documents:
+        logger.debug(f"Extracted {len(documents)} document(s) from content")
+
+    return documents
 
 
 # ==================================================================================================
@@ -722,6 +770,34 @@ def convert_images_to_kiro_format(images: Optional[List[Dict[str, Any]]]) -> Lis
         logger.debug(f"Converted {len(kiro_images)} image(s) to Kiro format")
     
     return kiro_images
+
+
+def convert_documents_to_kiro_format(documents: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """
+    Converts unified PDF documents to Kiro API format.
+
+    Unified format: [{"media_type": "application/pdf", "data": "base64..."}]
+    Kiro format: [{"format": "pdf", "source": {"bytes": "base64..."}}]
+    """
+    if not documents:
+        return []
+
+    kiro_documents = []
+    for document in documents:
+        media_type = document.get("media_type", "application/pdf")
+        data = document.get("data", "")
+
+        if not data:
+            logger.warning("Skipping document with empty data")
+            continue
+
+        format_str = media_type.split("/")[-1] if "/" in media_type else media_type
+        kiro_documents.append({"format": format_str, "source": {"bytes": data}})
+
+    if kiro_documents:
+        logger.debug(f"Converted {len(kiro_documents)} document(s) to Kiro format")
+
+    return kiro_documents
 
 
 # ==================================================================================================
@@ -1379,6 +1455,12 @@ def build_kiro_history(messages: List[UnifiedMessage], model_id: str) -> List[Di
                 kiro_images = convert_images_to_kiro_format(images)
                 if kiro_images:
                     user_input["images"] = kiro_images
+
+            documents = msg.documents or extract_documents_from_content(msg.content)
+            if documents:
+                kiro_documents = convert_documents_to_kiro_format(documents)
+                if kiro_documents:
+                    user_input["documents"] = kiro_documents
             
             # Build userInputMessageContext for tools and toolResults only
             user_input_context: Dict[str, Any] = {}
@@ -1544,6 +1626,13 @@ def build_kiro_payload(
         kiro_images = convert_images_to_kiro_format(images)
         if kiro_images:
             logger.debug(f"Added {len(kiro_images)} image(s) to current message")
+
+    documents = current_message.documents or extract_documents_from_content(current_message.content)
+    kiro_documents = None
+    if documents:
+        kiro_documents = convert_documents_to_kiro_format(documents)
+        if kiro_documents:
+            logger.debug(f"Added {len(kiro_documents)} document(s) to current message")
     
     # Build user_input_context for tools and toolResults only (NOT images)
     user_input_context: Dict[str, Any] = {}
@@ -1579,6 +1668,9 @@ def build_kiro_payload(
     # Add images directly to userInputMessage (NOT to userInputMessageContext)
     if kiro_images:
         user_input_message["images"] = kiro_images
+
+    if kiro_documents:
+        user_input_message["documents"] = kiro_documents
     
     # Add user_input_context if present (contains tools and toolResults only)
     if user_input_context:

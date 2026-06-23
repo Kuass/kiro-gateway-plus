@@ -43,8 +43,8 @@ from kiro.converters_core import (
     build_kiro_payload,
     extract_text_content,
     extract_images_from_content,
+    extract_documents_from_content,
 )
-
 
 BILLING_HEADER_RE = re.compile(r"^x-anthropic-billing-header:[^\r\n]*(?:\r?\n)?")
 
@@ -305,6 +305,7 @@ def convert_anthropic_messages(
         tool_calls = None
         tool_results = None
         images = None
+        documents = None
 
         if role == "assistant":
             # Assistant messages may contain tool_use blocks
@@ -333,12 +334,15 @@ def convert_anthropic_messages(
             if images:
                 total_images += len(images)
 
+            documents = extract_documents_from_content(content)
+
         unified_msg = UnifiedMessage(
             role=role,
             content=text_content,
             tool_calls=tool_calls if tool_calls else None,
             tool_results=tool_results if tool_results else None,
             images=images if images else None,
+            documents=documents if documents else None,
         )
         unified_messages.append(unified_msg)
 
