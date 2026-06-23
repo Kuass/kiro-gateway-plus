@@ -422,7 +422,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                     # Multiple accounts - generic error with context
                     detail = "No available accounts for this model."
                     if last_error_message:
-                        detail += f" Last error: {last_error_message}"
+                        detail += f" Error from last account: {last_error_message}"
                     raise HTTPException(status_code=503, detail=detail)
             
             # Mark account as tried in current failover loop
@@ -724,7 +724,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
             # Multiple accounts - generic error with context
             detail = "All accounts failed after full circle."
             if last_error_message:
-                detail += f" Last error: {last_error_message}"
+                detail += f" Error from last account: {last_error_message}"
             raise HTTPException(status_code=503, detail=detail)
     
     else:
