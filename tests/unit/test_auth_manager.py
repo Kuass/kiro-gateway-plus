@@ -2210,6 +2210,86 @@ class TestKiroAuthManagerRefreshFailureCooldown:
         assert first == second == "still_valid_token"
         assert client.post.await_count == calls_after_first
 
+    @pytest.mark.asyncio
+    async def test_force_refresh_skips_oidc_during_cooldown(self, tmp_path):
+        """
+        What it does: Verifies force_refresh() (called on Kiro 403) does not call OIDC during cooldown.
+        Purpose: A 403 retry loop with a still-valid token must not bypass the cooldown.
+        """
+        print("Setup: Token expiring in 5 minutes, refresh fails with 400 to start cooldown...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "still_valid_token", datetime.now(timezone.utc) + timedelta(minutes=5))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+            await manager.get_access_token()
+            calls_after_cooldown_start = client.post.await_count
+
+            print("Action: force_refresh() during cooldown...")
+            token = await manager.force_refresh()
+
+        print(f"Comparing OIDC calls: Expected {calls_after_cooldown_start}, Got {client.post.await_count}")
+        assert client.post.await_count == calls_after_cooldown_start
+        assert token == "still_valid_token"
+
+    @pytest.mark.asyncio
+    async def test_force_refresh_400_starts_cooldown(self, tmp_path):
+        """
+        What it does: Verifies a 400 from force_refresh() starts the cooldown and still propagates.
+        Purpose: Subsequent 403 retries must not call OIDC again after the first 400.
+        """
+        print("Setup: Fresh token (no proactive refresh), OIDC returns 400...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "valid_token", datetime.now(timezone.utc) + timedelta(hours=1))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+
+            print("Action: First force_refresh() hits OIDC and fails...")
+            with pytest.raises(httpx.HTTPStatusError):
+                await manager.force_refresh()
+            calls_after_first = client.post.await_count
+            assert manager._refresh_cooldown_until is not None
+
+            print("Action: Second force_refresh() during cooldown (same token as before)...")
+            token = await manager.force_refresh()
+
+        print(f"Comparing OIDC calls: Expected {calls_after_first}, Got {client.post.await_count}")
+        assert client.post.await_count == calls_after_first
+        assert token == "valid_token"
+        print("Verification: Same (rejected) token must not end the cooldown...")
+        assert manager._refresh_cooldown_until is not None
+
+    @pytest.mark.asyncio
+    async def test_force_refresh_picks_up_relogin_during_cooldown(self, tmp_path):
+        """
+        What it does: Verifies force_refresh() returns a new SQLite token written by 'kiro-cli login'.
+        Purpose: Re-login must end the cooldown even when recovery is triggered by a 403.
+        """
+        print("Setup: Start cooldown via a failed force_refresh()...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "rejected_token", datetime.now(timezone.utc) + timedelta(hours=1))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+            with pytest.raises(httpx.HTTPStatusError):
+                await manager.force_refresh()
+            calls_after_failure = client.post.await_count
+
+            print("Action: Simulating 'kiro-cli login', then force_refresh()...")
+            _write_kiro_cli_token(
+                db_file, "relogin_token", datetime.now(timezone.utc) + timedelta(hours=1), "fresh_refresh"
+            )
+            token = await manager.force_refresh()
+
+        print(f"Comparing token: Expected 'relogin_token', Got '{token}'")
+        assert token == "relogin_token"
+        assert client.post.await_count == calls_after_failure
+        assert manager._refresh_cooldown_until is None
+
 
 # =============================================================================
 # Tests for _save_credentials_to_sqlite() - NEW FUNCTIONALITY

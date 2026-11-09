@@ -978,12 +978,32 @@ class KiroAuthManager:
         Forces a token refresh.
         
         Used when receiving a 403 error from the API.
-        
+
+        In SQLite mode the refresh cooldown applies here too: during the cooldown
+        SQLite is re-read (to pick up 'kiro-cli login') instead of calling OIDC,
+        and a 400 from OIDC starts the cooldown before propagating.
+
         Returns:
             New access token
         """
         async with self._lock:
-            await self._refresh_token_request()
+            if self._sqlite_db and self._is_in_refresh_cooldown():
+                rejected_token = self._access_token
+                self._load_credentials_from_sqlite(self._sqlite_db)
+                # Only a different token (written by 'kiro-cli login') ends the cooldown;
+                # the same token is the one Kiro just rejected with 403.
+                if self._access_token != rejected_token and not self.is_token_expiring_soon():
+                    self._refresh_cooldown_until = None
+                return self._use_existing_token_or_raise()
+
+            try:
+                await self._refresh_token_request()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and self._sqlite_db:
+                    self._start_refresh_cooldown()
+                raise
+
+            self._refresh_cooldown_until = None
             return self._access_token
     
     @property
