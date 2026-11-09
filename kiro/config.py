@@ -519,6 +519,16 @@ FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "minimax-m2.1"},
     {"modelId": "minimax-m2.5"},
     {"modelId": "qwen3-coder-next"},
+    # Verified with live requests against runtime.us-east-1.kiro.dev on 2026-11-09
+    {"modelId": "claude-haiku-5.5"},
+    {"modelId": "claude-sonnet-5"},
+    {"modelId": "claude-sonnet-5.5"},
+    {"modelId": "claude-opus-4.8"},
+    {"modelId": "claude-opus-5"},
+    {"modelId": "claude-opus-5.5"},
+    {"modelId": "gpt-5.6-luna"},
+    {"modelId": "gpt-5.6-sol"},
+    {"modelId": "gpt-5.6-terra"},
 ]
 
 # ==================================================================================================
