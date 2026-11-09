@@ -417,6 +417,13 @@ def should_fetch_model_list(q_host: str) -> bool:
 # Default 10 minutes - refresh token in advance to avoid errors
 TOKEN_REFRESH_THRESHOLD: int = 600
 
+# After an AWS SSO OIDC refresh fails with 400 in SQLite (kiro-cli) mode, skip further
+# OIDC calls for this many seconds and fail fast. SQLite is still re-read on every
+# request, so a 'kiro-cli login' recovers immediately. Set 0 to disable.
+TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS: int = max(
+    0, _parse_int_env("TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS", 300)
+)
+
 # ==================================================================================================
 # Retry Configuration
 # ==================================================================================================

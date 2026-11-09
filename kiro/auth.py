@@ -32,6 +32,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
@@ -42,6 +43,7 @@ from loguru import logger
 
 from kiro.config import (
     TOKEN_REFRESH_THRESHOLD,
+    TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS,
     SQLITE_READONLY,
     normalize_config_path,
     get_kiro_refresh_url,
@@ -169,7 +171,10 @@ class KiroAuthManager:
         self._access_token: Optional[str] = None
         self._expires_at: Optional[datetime] = None
         self._lock = asyncio.Lock()
-        
+
+        # Monotonic deadline until which OIDC refresh is skipped after a 400 failure
+        self._refresh_cooldown_until: Optional[float] = None
+
         # Auth type will be determined after loading credentials
         self._auth_type: AuthType = AuthType.KIRO_DESKTOP
         
@@ -879,10 +884,15 @@ class KiroAuthManager:
         If kiro-cli has been running and refreshing tokens in memory (without persisting
         to SQLite), the refresh_token in SQLite becomes stale. In this case, we fall back
         to using the access_token directly until it actually expires.
-        
+
+        After such a 400 failure, OIDC refresh is skipped for
+        TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS so that every client request does not
+        hit AWS again. SQLite is still re-read first, so 'kiro-cli login' recovers
+        immediately even during the cooldown.
+
         Returns:
             Valid access token
-        
+
         Raises:
             ValueError: If unable to obtain access token
         """
@@ -890,7 +900,7 @@ class KiroAuthManager:
             # Token is valid and not expiring soon - just return it
             if self._access_token and not self.is_token_expiring_soon():
                 return self._access_token
-            
+
             # SQLite mode: reload credentials first, kiro-cli might have updated them
             if self._sqlite_db and self.is_token_expiring_soon():
                 logger.debug("SQLite mode: reloading credentials before refresh attempt")
@@ -898,8 +908,13 @@ class KiroAuthManager:
                 # Check if reloaded token is now valid
                 if self._access_token and not self.is_token_expiring_soon():
                     logger.debug("SQLite reload provided fresh token, no refresh needed")
+                    self._refresh_cooldown_until = None
                     return self._access_token
-            
+
+            # Recent refresh failure: fail fast instead of calling OIDC again
+            if self._is_in_refresh_cooldown():
+                return self._use_existing_token_or_raise()
+
             # Try to refresh the token
             try:
                 await self._refresh_token_request()
@@ -911,28 +926,52 @@ class KiroAuthManager:
                         "Token refresh failed with 400 after SQLite reload. "
                         "This may happen if kiro-cli refreshed tokens in memory without persisting."
                     )
-                    # Check if access_token is still usable
+                    self._start_refresh_cooldown()
                     if self._access_token and not self.is_token_expired():
                         logger.warning(
                             "Using existing access_token until it expires. "
                             "Run 'kiro-cli login' when convenient to refresh credentials."
                         )
-                        return self._access_token
-                    else:
-                        raise ValueError(
-                            "Token expired and refresh failed. "
-                            "Please run 'kiro-cli login' to refresh your credentials."
-                        )
+                    return self._use_existing_token_or_raise()
                 # Non-SQLite mode or non-400 error - propagate the exception
                 raise
-            except Exception:
-                # For any other exception, propagate it
-                raise
-            
+
+            self._refresh_cooldown_until = None
             if not self._access_token:
                 raise ValueError("Failed to obtain access token")
-            
+
             return self._access_token
+
+    def _is_in_refresh_cooldown(self) -> bool:
+        """Returns True while OIDC refresh should be skipped after a recent 400 failure."""
+        return (
+            self._refresh_cooldown_until is not None
+            and time.monotonic() < self._refresh_cooldown_until
+        )
+
+    def _start_refresh_cooldown(self) -> None:
+        """Starts the refresh cooldown window (no-op when the cooldown is disabled)."""
+        if TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS <= 0:
+            return
+        self._refresh_cooldown_until = time.monotonic() + TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS
+        logger.warning(
+            f"Skipping AWS SSO OIDC refresh for {TOKEN_REFRESH_FAILURE_COOLDOWN_SECONDS}s. "
+            "Run 'kiro-cli login' to recover; the new token is picked up immediately."
+        )
+
+    def _use_existing_token_or_raise(self) -> str:
+        """
+        Returns the current access token if it has not expired yet.
+
+        Raises:
+            ValueError: If the token is expired, asking the operator to re-login
+        """
+        if self._access_token and not self.is_token_expired():
+            return self._access_token
+        raise ValueError(
+            "Token expired and refresh failed. "
+            "Please run 'kiro-cli login' to refresh your credentials."
+        )
     
     async def force_refresh(self) -> str:
         """

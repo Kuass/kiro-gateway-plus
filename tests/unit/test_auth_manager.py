@@ -2040,6 +2040,177 @@ class TestKiroAuthManagerGracefulDegradation:
             assert exc_info.value.response.status_code == 400
 
 
+def _write_kiro_cli_token(db_file, access_token, expires_at, refresh_token="stale_refresh_token"):
+    """Create (or overwrite) a kiro-cli style SQLite DB with one token and one registration."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_file))
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS auth_kv (key TEXT PRIMARY KEY, value TEXT)")
+    token_data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at.isoformat(),
+        "region": "us-east-1",
+    }
+    registration_data = {
+        "client_id": "test_client_id",
+        "client_secret": "test_client_secret",
+        "region": "us-east-1",
+    }
+    cursor.execute(
+        "INSERT OR REPLACE INTO auth_kv (key, value) VALUES (?, ?)",
+        ("codewhisperer:odic:token", json.dumps(token_data)),
+    )
+    cursor.execute(
+        "INSERT OR REPLACE INTO auth_kv (key, value) VALUES (?, ?)",
+        ("codewhisperer:odic:device-registration", json.dumps(registration_data)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _mock_oidc_client(mock_client_class, status_code, body):
+    """Wire patched httpx.AsyncClient to return a single canned OIDC response."""
+    response = AsyncMock()
+    response.status_code = status_code
+    response.text = json.dumps(body)
+    response.json = Mock(return_value=body)
+    if status_code >= 400:
+        response.raise_for_status = Mock(
+            side_effect=httpx.HTTPStatusError("OIDC error", request=Mock(), response=response)
+        )
+    else:
+        response.raise_for_status = Mock(return_value=None)
+
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    mock_client_class.return_value = client
+    return client
+
+
+class TestKiroAuthManagerRefreshFailureCooldown:
+    """Tests for the cooldown that stops hammering AWS SSO OIDC after a 400 refresh failure.
+
+    Background: on 2026-11-08 the refresh token became invalid and every client request
+    triggered two OIDC calls (30k calls in ~26h). After a 400 in SQLite mode the gateway
+    should fail fast for a cooldown window, while still picking up a kiro-cli re-login
+    from SQLite immediately.
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_oidc_calls_during_cooldown_after_400(self, tmp_path):
+        """
+        What it does: Verifies no OIDC request is made while the cooldown is active.
+        Purpose: Ensure repeated client requests do not hammer AWS SSO OIDC.
+        """
+        print("Setup: SQLite DB with expired token...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "expired_token", datetime.now(timezone.utc) - timedelta(hours=1))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+
+            print("Action: First call fails and starts the cooldown...")
+            with pytest.raises(ValueError):
+                await manager.get_access_token()
+            calls_after_first = client.post.await_count
+            print(f"OIDC calls after first request: {calls_after_first}")
+            assert calls_after_first == 2
+
+            print("Action: Second call during cooldown...")
+            with pytest.raises(ValueError) as exc_info:
+                await manager.get_access_token()
+
+            print(f"Comparing OIDC calls: Expected {calls_after_first}, Got {client.post.await_count}")
+            assert client.post.await_count == calls_after_first
+            assert "kiro-cli login" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_sqlite_relogin_during_cooldown_recovers_immediately(self, tmp_path):
+        """
+        What it does: Verifies a fresh token written by 'kiro-cli login' is used during cooldown.
+        Purpose: Recovery after re-login must not wait for the cooldown to expire.
+        """
+        print("Setup: SQLite DB with expired token...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "expired_token", datetime.now(timezone.utc) - timedelta(hours=1))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+            with pytest.raises(ValueError):
+                await manager.get_access_token()
+            calls_after_failure = client.post.await_count
+
+            print("Action: Simulating 'kiro-cli login' writing a fresh token...")
+            _write_kiro_cli_token(
+                db_file, "fresh_token", datetime.now(timezone.utc) + timedelta(hours=1), "fresh_refresh"
+            )
+            token = await manager.get_access_token()
+
+            print(f"Comparing token: Expected 'fresh_token', Got '{token}'")
+            assert token == "fresh_token"
+            assert client.post.await_count == calls_after_failure
+            assert manager._refresh_cooldown_until is None
+
+    @pytest.mark.asyncio
+    async def test_retries_refresh_after_cooldown_expires(self, tmp_path):
+        """
+        What it does: Verifies refresh is attempted again once the cooldown has passed.
+        Purpose: Transient failures must recover without a restart, and success clears the cooldown.
+        """
+        print("Setup: SQLite DB with expired token...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "expired_token", datetime.now(timezone.utc) - timedelta(hours=1))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+            with pytest.raises(ValueError):
+                await manager.get_access_token()
+            assert manager._refresh_cooldown_until is not None
+
+        print("Action: Expiring the cooldown and making OIDC succeed...")
+        manager._refresh_cooldown_until = 0.0
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(
+                mock_client_class,
+                200,
+                {"accessToken": "refreshed_token", "refreshToken": "new_refresh", "expiresIn": 3600},
+            )
+            token = await manager.get_access_token()
+
+        print(f"Comparing token: Expected 'refreshed_token', Got '{token}'")
+        assert token == "refreshed_token"
+        assert client.post.await_count == 1
+        assert manager._refresh_cooldown_until is None
+
+    @pytest.mark.asyncio
+    async def test_cooldown_keeps_returning_still_valid_token(self, tmp_path):
+        """
+        What it does: Verifies the not-yet-expired access token is still served during cooldown.
+        Purpose: Preserve existing graceful degradation while skipping OIDC calls.
+        """
+        print("Setup: SQLite DB with token expiring in 5 minutes...")
+        db_file = tmp_path / "data.sqlite3"
+        _write_kiro_cli_token(db_file, "still_valid_token", datetime.now(timezone.utc) + timedelta(minutes=5))
+        manager = KiroAuthManager(sqlite_db=str(db_file))
+
+        with patch("kiro.auth.httpx.AsyncClient") as mock_client_class:
+            client = _mock_oidc_client(mock_client_class, 400, {"error": "invalid_request"})
+            first = await manager.get_access_token()
+            calls_after_first = client.post.await_count
+            second = await manager.get_access_token()
+
+        print(f"Comparing tokens: {first!r}, {second!r}; OIDC calls {calls_after_first} -> {client.post.await_count}")
+        assert first == second == "still_valid_token"
+        assert client.post.await_count == calls_after_first
+
+
 # =============================================================================
 # Tests for _save_credentials_to_sqlite() - NEW FUNCTIONALITY
 # =============================================================================
