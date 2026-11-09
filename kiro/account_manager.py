@@ -560,19 +560,22 @@ class AccountManager:
         if not account or not account.auth_manager:
             return
         
+        # Hosts without /ListAvailableModels (runtime.kiro.dev in auto mode):
+        # refresh the cache from the static list so FALLBACK_MODELS edits apply on TTL.
+        if not should_fetch_model_list(account.auth_manager.q_host):
+            logger.debug(
+                f"Skipping model refresh for {account_id}: "
+                f"{account.auth_manager.q_host} does not expose /ListAvailableModels"
+            )
+            await account.model_cache.update(FALLBACK_MODELS)
+            account.models_cached_at = time.time()
+            self._dirty = True
+            return
+
         # Use KiroHttpClient for retry logic
         http_client = KiroHttpClient(account.auth_manager, shared_client=None)
-        
-        try:
-            if not should_fetch_model_list(account.auth_manager.q_host):
-                account.models_cached_at = time.time()
-                logger.debug(
-                    f"Skipping model refresh for {account_id}: "
-                    f"{account.auth_manager.q_host} does not expose /ListAvailableModels"
-                )
-                self._dirty = True
-                return
 
+        try:
             params = {"origin": "AI_EDITOR"}
             if account.auth_manager.auth_type == AuthType.KIRO_DESKTOP and account.auth_manager.profile_arn:
                 params["profileArn"] = account.auth_manager.profile_arn
@@ -655,15 +658,15 @@ class AccountManager:
                             await self._refresh_account_models(account_id)
                         except Exception as e:
                             logger.warning(f"Failed to refresh models for {account_id}: {e}")
-                
-                # Validate model availability
-                if account.model_resolver:
-                    normalized_model = normalize_model_name(model)
-                    available_models = account.model_resolver.get_available_models()
-                    if normalized_model not in available_models:
-                        return None
+                # # Validate model availability
+                # if account.model_resolver:
+                #     normalized_model = normalize_model_name(model)
+                #     available_models = account.model_resolver.get_available_models()
+                #     if normalized_model not in available_models:
+                #         return None
                 
                 # Always return single account (ignore cooldown/failures)
+                # No model validation - let Kiro API decide (gateway, not gatekeeper)
                 return account
             
             # Multi-account logic: GLOBAL sticky
@@ -719,12 +722,12 @@ class AccountManager:
                             await self._refresh_account_models(account_id)
                         except Exception as e:
                             logger.warning(f"Failed to refresh models for {account_id}: {e}")
+                # # Check if model is available on this account
+                # available_models = account.model_resolver.get_available_models()
+                # if normalized_model not in available_models:
+                #     continue
                 
-                # Check if model is available on this account
-                available_models = account.model_resolver.get_available_models()
-                if normalized_model not in available_models:
-                    continue
-                
+                # No model validation - let Kiro API decide (gateway, not gatekeeper)
                 # Account is suitable!
                 return account
             
@@ -733,7 +736,7 @@ class AccountManager:
     
     async def report_success(self, account_id: str, model: str) -> None:
         """
-        Report successful request (reset failures, update stats, sticky).
+        Report successful request (reset failures, update stats, sticky, dynamic learning).
         
         Args:
             account_id: Account ID
@@ -753,6 +756,17 @@ class AccountManager:
             account.stats.total_requests += 1
             account.stats.successful_requests += 1
             self._dirty = True
+            
+            # Dynamic learning: add model to mapping if successful
+            # This allows system to learn about new models not in FALLBACK_MODELS
+            normalized_model = normalize_model_name(model)
+            if normalized_model not in self._model_to_accounts:
+                self._model_to_accounts[normalized_model] = ModelAccountList()
+                logger.debug(f"Dynamic learning: discovered new model '{normalized_model}'")
+            if account_id not in self._model_to_accounts[normalized_model].accounts:
+                self._model_to_accounts[normalized_model].accounts.append(account_id)
+                logger.debug(f"Dynamic learning: model '{normalized_model}' works on account {account_id}")
+                self._dirty = True
             
             # GLOBAL STICKY: Update global current_account_index
             all_account_ids = list(self._accounts.keys())
@@ -785,6 +799,18 @@ class AccountManager:
         async with self._lock:
             account = self._accounts.get(account_id)
             if not account:
+                return
+            
+            # Special case: INVALID_MODEL_ID is discovery process, not account failure
+            # Account is healthy, model is just not available on this account
+            # Log for user visibility but don't penalize account statistics
+            if reason == "INVALID_MODEL_ID":
+                account.stats.total_requests += 1
+                self._dirty = True
+                logger.warning(
+                    f"Model '{model}' not available on account {account_id}: "
+                    f"status={status_code}, reason={reason}"
+                )
                 return
             
             # Update failure count (only for RECOVERABLE)

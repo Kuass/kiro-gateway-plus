@@ -36,35 +36,33 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from loguru import logger
-from kiro.config import MODEL_ALLOWLIST_ENABLED, get_model_allowed_ids
+from kiro.config import FALLBACK_MODELS, MODEL_ALLOWLIST_ENABLED, get_model_allowed_ids
 
 if TYPE_CHECKING:
     from kiro.cache import ModelInfoCache
 
 
 # Valid model IDs accepted by runtime.{region}.kiro.dev
-VALID_RUNTIME_MODEL_IDS: set = {
-    "auto",
-    "claude-sonnet-4",
-    "claude-sonnet-4.5",
-    "claude-sonnet-4.6",
-    "claude-opus-4.5",
-    "claude-opus-4.6",
-    "claude-opus-4.7",
-    "claude-haiku-4.5",
-}
+# Generated from FALLBACK_MODELS to maintain single source of truth
+
+VALID_RUNTIME_MODEL_IDS: set = {model["modelId"] for model in FALLBACK_MODELS}
 
 
 def to_runtime_model_id(normalized: str) -> str:
     """
-    Map a normalized model name to a valid runtime.kiro.dev model ID.
-
-    Returns the model as-is if it's in the valid set, otherwise "auto".
+    Pass-through function for runtime.kiro.dev model ID.
+    
+    Previously performed fallback to "auto" for unknown models, but this violated
+    the "gateway, not gatekeeper" principle. Now returns model as-is and lets
+    Kiro API decide if the model exists.
+    
+    Args:
+        normalized: Normalized model name
+    
+    Returns:
+        Model name as-is (no fallback)
     """
-    if normalized in VALID_RUNTIME_MODEL_IDS:
-        return normalized
-    logger.debug(f"Model '{normalized}' not valid for runtime endpoint, defaulting to 'auto'")
-    return "auto"
+    return normalized
 
 
 @dataclass(frozen=True)

@@ -33,8 +33,6 @@ Feito com ❤️ por [@Jwadow](https://github.com/jwadow)
 
 📦 **Claude Sonnet 4** — Geração anterior. Ainda poderoso e confiável para a maioria dos casos de uso.
 
-📦 **Claude 3.7 Sonnet** — Modelo legado. Disponível para compatibilidade retroativa.
-
 💤 **GLM-5** — Modelo MoE aberto (744B parâmetros, 40B ativos). Modelo avançado para engenharia de sistemas complexos e tarefas agênticas de longo prazo.
 
 🐋 **DeepSeek-V3.2** — Modelo MoE aberto (685B parâmetros, 37B ativos). Desempenho equilibrado para programação, raciocínio e tarefas gerais.

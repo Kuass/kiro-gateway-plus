@@ -54,6 +54,7 @@ def classify_error(status_code: int, reason: Optional[str]) -> ErrorType:
     request-specific (FATAL) based on HTTP status code and error reason.
 
     RECOVERABLE errors (try next account):
+    - 400 + INVALID_MODEL_ID: Could be invalid model or insufficient subscription
     - 402: Payment required (monthly quota exceeded, billing issues)
     - 403: Token expired/invalid
     - 429: Rate limit exceeded
@@ -73,6 +74,8 @@ def classify_error(status_code: int, reason: Optional[str]) -> ErrorType:
         ErrorType.FATAL if should return error to client
 
     Examples:
+        >>> classify_error(400, "INVALID_MODEL_ID")
+        ErrorType.RECOVERABLE
         >>> classify_error(402, "MONTHLY_REQUEST_COUNT")
         ErrorType.RECOVERABLE
         >>> classify_error(403, None)
@@ -103,7 +106,12 @@ def classify_error(status_code: int, reason: Optional[str]) -> ErrorType:
 
     # 400 errors - depends on reason
     if status_code == 400:
-
+        
+        # RECOVERABLE: Model not available on this account (subscription level)
+        # Different accounts may have different model access based on their subscription
+        if reason == "INVALID_MODEL_ID":
+            return ErrorType.RECOVERABLE
+        
         # FATAL: Context overflow - will fail on all accounts
         if reason == "CONTENT_LENGTH_EXCEEDS_THRESHOLD":
             return ErrorType.FATAL

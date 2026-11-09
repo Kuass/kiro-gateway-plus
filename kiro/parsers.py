@@ -428,6 +428,7 @@ class AwsEventStreamParser:
                             f"Tool call truncated by Kiro API: "
                             f"tool='{tool_name}', id={tool_id}, size={truncation_info['size_bytes']} bytes, "
                             f"reason={truncation_info['reason']}. "
+                            f"This is a Kiro API limitation. "
                             f"{'Model will be notified automatically about truncation.' if TRUNCATION_RECOVERY else 'Set TRUNCATION_RECOVERY=true in .env to auto-notify model about truncation.'}"
                         )
                     else:

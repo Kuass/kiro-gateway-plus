@@ -1285,7 +1285,6 @@ def ensure_first_message_is_user(messages: List[UnifiedMessage]) -> List[Unified
             f"First message is '{messages[0].role}', prepending synthetic user message "
             f"(Kiro API requires conversations to start with user)"
         )
-        
         # Create minimal synthetic user message (matches LiteLLM behavior)
         # Using "(empty placeholder)" as minimal valid content to avoid disrupting conversation context
         synthetic_user = UnifiedMessage(
@@ -1397,7 +1396,7 @@ def ensure_alternating_roles(messages: List[UnifiedMessage]) -> List[UnifiedMess
         if msg.role == "user" and prev_role == "user":
             synthetic_assistant = UnifiedMessage(
                 role="assistant",
-                content="(empty placeholder)"
+                content="(empty placeholder)"  # Consistent with build_kiro_history() placeholder
             )
             result.append(synthetic_assistant)
             synthetic_count += 1
@@ -1606,6 +1605,7 @@ def build_kiro_payload(
         current_content = f"{full_system_prompt}\n\n{current_content}"
     
     # If current message is assistant, need to add it to history
+    # and create user message placeholder
     if current_message.role == "assistant":
         history.append({
             "assistantResponseMessage": {
@@ -1614,6 +1614,7 @@ def build_kiro_payload(
         })
         current_content = "(empty placeholder)"
     
+    # If content is empty - use placeholder
     if not current_content:
         current_content = "(empty placeholder)"
     

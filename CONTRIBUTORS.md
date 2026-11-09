@@ -6,7 +6,7 @@ Thank you to all the contributors who have helped improve this project!
 
 These contributors have made significant, sustained contributions to the project:
 
-- [@bhaskoro-muthohar](https://github.com/bhaskoro-muthohar) — MCP tool results analysis (#46, #50), message structure validation (#60), payload size guard (#73), tool_reference support (#89, #90), and ongoing project support
+- [@bhaskoro-muthohar](https://github.com/bhaskoro-muthohar) — MCP tool results analysis (#46, #50), message structure validation (#60), payload size guard (#73), tool_reference support (#89, #90), runtime.kiro.dev endpoint migration (#155), and ongoing project support
 
 ## Contributors
 

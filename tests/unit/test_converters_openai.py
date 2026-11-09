@@ -737,7 +737,7 @@ class TestBuildKiroPayload:
     def test_handles_assistant_as_last_message(self):
         """
         What it does: Verifies handling of assistant as last message.
-        Purpose: Ensure neutral placeholder message is created.
+        Purpose: Ensure "(empty placeholder)" message is created.
         """
         print("Setup: Request with assistant at the end...")
         request = ChatCompletionRequest(
@@ -775,8 +775,8 @@ class TestBuildKiroPayload:
     
     def test_uses_empty_placeholder_for_empty_content(self):
         """
-        What it does: Verifies using neutral placeholder for empty content.
-        Purpose: Ensure empty message is replaced with neutral placeholder.
+        What it does: Verifies using "(empty placeholder)" for empty content.
+        Purpose: Ensure empty message is replaced with "(empty placeholder)".
         """
         print("Setup: Request with empty content...")
         request = ChatCompletionRequest(

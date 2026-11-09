@@ -443,7 +443,7 @@ BASE_RETRY_DELAY: float = 1.0
 # We expose them to our users because they're useful.
 HIDDEN_MODELS: Dict[str, str] = {
     # Claude 3.7 Sonnet - legacy model, maps to "auto" on new runtime endpoint
-    "claude-3.7-sonnet": "auto",
+    # "claude-3.7-sonnet": "auto",
 }
 
 # ==================================================================================================
@@ -501,12 +501,17 @@ HIDDEN_FROM_LIST: List[str] = ["auto"]
 FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "auto"},
     {"modelId": "claude-sonnet-4"},
-    {"modelId": "claude-haiku-4.5"},
     {"modelId": "claude-sonnet-4.5"},
     {"modelId": "claude-sonnet-4.6"},
+    {"modelId": "claude-haiku-4.5"},
     {"modelId": "claude-opus-4.5"},
     {"modelId": "claude-opus-4.6"},
     {"modelId": "claude-opus-4.7"},
+    {"modelId": "deepseek-3.2"},
+    {"modelId": "glm-5"},
+    {"modelId": "minimax-m2.1"},
+    {"modelId": "minimax-m2.5"},
+    {"modelId": "qwen3-coder-next"},
 ]
 
 # ==================================================================================================
@@ -790,7 +795,7 @@ STATE_SAVE_INTERVAL_SECONDS: int = int(os.getenv("STATE_SAVE_INTERVAL_SECONDS", 
 # Application Version
 # ==================================================================================================
 
-APP_VERSION: str = "2.4-dev.10"
+APP_VERSION: str = "2.4.dev.13"
 APP_TITLE: str = "Kiro Gateway"
 APP_DESCRIPTION: str = "Proxy gateway for Kiro API (Amazon Q Developer / AWS CodeWhisperer). OpenAI and Anthropic compatible. Made by @jwadow"
 

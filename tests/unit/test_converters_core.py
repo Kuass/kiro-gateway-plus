@@ -4663,7 +4663,7 @@ class TestStripAllToolContent:
                 content="",
                 tool_calls=[{"id": "call_1", "type": "function", "function": {"name": "tool", "arguments": "{}"}}]
             ),  # Has tool content
-            UnifiedMessage(role="user", content="Continue"),  # No tool content
+            UnifiedMessage(role="user", content="(empty placeholder)"),  # No tool content
         ]
         
         print("Action: Stripping tool content...")
@@ -4674,7 +4674,7 @@ class TestStripAllToolContent:
         assert result[0].content == "Hello"
         assert result[0].tool_calls is None
         assert result[1].tool_calls is None  # Stripped
-        assert result[2].content == "Continue"
+        assert result[2].content == "(empty placeholder)"
         assert result[2].tool_calls is None
         assert had_content is True
     
@@ -5682,7 +5682,7 @@ class TestBuildKiroPayloadIssue20:
                     "content": "Tool executed"
                 }]
             ),
-            UnifiedMessage(role="user", content="Continue")
+            UnifiedMessage(role="user", content="(empty placeholder)")
         ]
         
         tools = [UnifiedTool(
@@ -5733,7 +5733,7 @@ class TestBuildKiroPayloadIssue20:
                     "function": {"name": "some_tool", "arguments": "{}"}
                 }]
             ),
-            UnifiedMessage(role="user", content="Continue")
+            UnifiedMessage(role="user", content="(empty placeholder)")
         ]
         
         print("Action: Building Kiro payload with empty tools list...")
