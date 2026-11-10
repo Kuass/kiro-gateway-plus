@@ -36,7 +36,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from loguru import logger
-from kiro.config import FALLBACK_MODELS, MODEL_ALLOWLIST_ENABLED, get_model_allowed_ids
+from kiro.config import (
+    FALLBACK_MODELS,
+    MODEL_ALIASES,
+    MODEL_ALLOWLIST_ENABLED,
+    get_model_allowed_ids,
+)
 
 if TYPE_CHECKING:
     from kiro.cache import ModelInfoCache
@@ -214,7 +219,8 @@ def get_model_id_for_kiro(model_name: str, hidden_models: Dict[str, str]) -> str
         >>> get_model_id_for_kiro("claude-3-7-sonnet", {"claude-3.7-sonnet": "CLAUDE_3_7_SONNET_20250219_V1_0"})
         'CLAUDE_3_7_SONNET_20250219_V1_0'
     """
-    normalized = normalize_model_name(model_name)
+    aliased = MODEL_ALIASES.get(model_name, model_name)
+    normalized = normalize_model_name(aliased)
 
     if MODEL_ALLOWLIST_ENABLED:
         allowed_ids = get_model_allowed_ids()

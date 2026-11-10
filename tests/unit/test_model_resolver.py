@@ -1442,6 +1442,14 @@ class TestDefaultModelAliases:
         assert result.internal_id == "auto"
         assert result.original_request == model
 
+    @pytest.mark.parametrize("model", ["minimax-m2.1", "minimax-m2.5", "auto-kiro"])
+    def test_request_path_applies_default_aliases(self, model):
+        """
+        What it does: get_model_id_for_kiro (used by both converters) applies aliases.
+        Purpose: Aliases must change the model sent to Kiro, not only /v1/models.
+        """
+        assert get_model_id_for_kiro(model, {}) == "auto"
+
 
 class TestModelAliasSystemEdgeCases:
     """Edge cases and boundary conditions for alias system."""
