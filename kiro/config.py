@@ -480,6 +480,11 @@ HIDDEN_MODELS: Dict[str, str] = {
 # Default: {"auto-kiro": "auto"} to avoid Cursor IDE conflict
 MODEL_ALIASES: Dict[str, str] = {
     "auto-kiro": "auto",  # Default alias to avoid Cursor's "auto" model conflict
+    # MiniMax on Kiro is text-only and rejects image input (IMAGE_FORMAT_UNSUPPORTED).
+    # Clients that use these names as a default model also send screenshots, and
+    # these names were served by "auto" before upstream pass-through was merged.
+    "minimax-m2.1": "auto",
+    "minimax-m2.5": "auto",
 }
 
 # Models to hide from /v1/models endpoint.

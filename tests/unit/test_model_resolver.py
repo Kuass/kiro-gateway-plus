@@ -1422,6 +1422,27 @@ class TestModelAliasSystemBasics:
         assert result3.internal_id == "claude-haiku-4.5"
 
 
+class TestDefaultModelAliases:
+    """Tests for the aliases shipped in kiro.config.MODEL_ALIASES."""
+
+    @pytest.mark.parametrize("model", ["minimax-m2.1", "minimax-m2.5"])
+    def test_minimax_routes_to_auto_by_default(self, mock_model_cache, model):
+        """
+        What it does: Default aliases send MiniMax requests to "auto".
+        Purpose: MiniMax on Kiro is text-only; clients that send images with
+        minimax-m2.1 worked before pass-through because the old resolver
+        mapped unknown models to "auto". Keep that behavior.
+        """
+        from kiro.config import MODEL_ALIASES
+
+        resolver = ModelResolver(cache=mock_model_cache, aliases=MODEL_ALIASES)
+
+        result = resolver.resolve(model)
+
+        assert result.internal_id == "auto"
+        assert result.original_request == model
+
+
 class TestModelAliasSystemEdgeCases:
     """Edge cases and boundary conditions for alias system."""
     
